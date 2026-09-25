@@ -123,7 +123,7 @@ if ! HOME="$home" "$root/claude/signing-key.sh"; then
   failures=$((failures + 1))
 fi
 
-export home socket work label uid
+export root home socket work label uid
 
 # GitHub and the trust list both keep the type and the body and drop the comment.
 export signer_line="signer@example.com $(awk '{print $1" "$2}' "$work/key.pub")"

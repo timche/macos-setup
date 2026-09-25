@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Twice, and asserted after each: the repeat is what keeps the whole of it
       # honest about being safe to re-run, which is the only way a change ever
