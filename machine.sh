@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # The whole of the machine: Homebrew and the packages, the Remote Login this Mac
-# is reached through, the power settings that bring it back on its own, the
-# tailnet, docker, and a hardened sshd. What it leaves is a Mac worth having with
-# no account anywhere on it.
+# is reached through, everything that keeps it running with nobody in front of it,
+# the tailnet, docker, and a hardened sshd. What it leaves is a Mac worth having
+# with no account anywhere on it.
 #
 # An entry point, and the usual one: bootstrap.sh exists for a Mac that does not
 # have this repo yet and calls this the moment it does. Running it again from the

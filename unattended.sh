@@ -1,19 +1,24 @@
 #!/bin/bash
 
-# What makes a Mac with nobody in front of it come back on its own: a restart
-# after power loss, no sleeping, and a GUI login session to come back into.
+# What makes a Mac with nobody in front of it keep going: it comes back on its
+# own after power loss, it never sleeps, it never puts a dialog up that something
+# waits behind, it never restarts itself for an update, and it has a GUI login
+# session to come back into.
 #
-# The session is the part that cannot be arranged from here. launchd puts a
-# LaunchAgent in the gui/<uid> domain, which exists only while somebody is logged
-# in at the console — so boswell, and the ssh-agent holding the signing key, are
-# both running inside a login this machine has to perform on itself. Auto-login
-# is the way it does, and setting it means writing an obfuscated password to
-# /etc/kcpassword, which this script will not do: it checks instead and says so.
+# The parallel Claude Code sessions are what this is for. Each one builds, runs
+# Electron apps that crash, and takes screenshots to show a change working, and
+# every one of those is a thing that stops dead at a modal or at a locked screen.
 #
-# Not fatal. A Mac that sleeps or comes up at the login window is still a Mac,
-# and both of these are one switch away in System Settings.
+# Three of them cannot be arranged from here at all, so this checks and says so
+# rather than pretending. Auto-login needs the account password written to
+# /etc/kcpassword, obfuscated rather than encrypted. Screen Sharing and the
+# Spotlight privacy list both need a click that macOS will not take from a
+# script — see the README, which says where each one lives and what it is for.
 #
-# Safe to re-run: pmset takes the same values again, and the login check reads.
+# Not fatal, any of it. A Mac that sleeps, locks or comes up at the login window
+# is still a Mac.
+#
+# Safe to re-run: every write is guarded on a read of what is already there.
 
 set -euo pipefail
 
@@ -21,6 +26,21 @@ if [ "$(uname -s)" != Darwin ]; then
   echo "unattended.sh is macOS only" >&2
   exit 1
 fi
+
+# `defaults read` exits non-zero for a key that is not there, which reads the
+# same as one whose value differs — both mean the write has to happen. Guarded
+# rather than repeated because every write wakes cfprefsd and notifies whatever
+# is watching the domain, and this script runs again on every pull.
+#
+# -bool writes `true` and reads back `1`, so a guard comparing against what was
+# written would never match and would write every time.
+as_read() {
+  case "$1 $2" in
+    "-bool true") echo 1 ;;
+    "-bool false") echo 0 ;;
+    *) echo "$2" ;;
+  esac
+}
 
 # Power
 
@@ -58,6 +78,149 @@ set_power autorestart 1
 set_power sleep 0
 set_power disksleep 0
 
+# Crash dialogs
+
+# A crash otherwise leaves Problem Reporter's window on the screen and the
+# crashed process waiting behind it, and the Electron apps under development here
+# crash as part of the work. `none` is the value that puts up nothing at all —
+# the report still lands in ~/Library/Logs/DiagnosticReports, which is where it
+# is any use to anybody.
+#
+# Per user, not /Library/Preferences: the two ReportCrash processes read the
+# domain of whoever owns the session the crash happened in, and a root crash has
+# no session to put a window in. Not ByHost either — this is an ordinary
+# preference domain, unlike the screensaver's below.
+set_user_default() {
+  local domain="$1" key="$2" type="$3" value="$4"
+
+  if [ "$(defaults read "$domain" "$key" 2>/dev/null)" = "$(as_read "$type" "$value")" ]; then
+    return 0
+  fi
+
+  defaults write "$domain" "$key" "$type" "$value"
+  echo "$domain $key is now $value"
+}
+
+set_user_default com.apple.CrashReporter DialogType -string none
+
+# The screen lock
+
+# A locked session keeps going — sshd answers, launchd keeps its jobs, builds
+# finish. What it stops is everything that has to look at the screen:
+# `screencapture` over SSH hands back a black frame from a locked session, and so
+# does every recording, which is how a session shows that a change works.
+#
+# Two separate settings, and only one of them can be written. idleTime is the
+# screensaver's, still in the ByHost domain even though Sonoma moved the engine
+# that reads it into a sandbox — 0 is never. askForPassword next to it is the key
+# this used to be and macOS has ignored it since Sonoma; sysadminctl is the
+# switch now, and it wants an admin password it will only take from a prompt.
+set_host_default() {
+  local domain="$1" key="$2" type="$3" value="$4"
+
+  if [ "$(defaults -currentHost read "$domain" "$key" 2>/dev/null)" = "$(as_read "$type" "$value")" ]; then
+    return 0
+  fi
+
+  defaults -currentHost write "$domain" "$key" "$type" "$value"
+  echo "$domain $key is now $value"
+
+  # The engine holds what it read when the session started, so the write alone
+  # does not reach a session that is already up.
+  killall -HUP cfprefsd 2>/dev/null || true
+}
+
+set_host_default com.apple.screensaver idleTime -int 0
+
+# sysadminctl answers on stderr, behind a timestamp, in one of three forms:
+# "screenLock is off", "screenLock delay is immediate", "screenLock delay is N
+# seconds". Reading it needs neither sudo nor a password.
+screen_lock() {
+  sysadminctl -screenLock status 2>&1 | sed -n 's/.*\(screenLock .*\)/\1/p'
+}
+
+if screen_lock | grep -q 'screenLock is off'; then
+  echo "the screen lock is off"
+elif [ -t 0 ]; then
+  echo
+  echo "Turning the screen lock off. sysadminctl asks for this account's own"
+  echo "password, not sudo's, and there is no way to hand it one that was not"
+  echo "typed in."
+  # `-password -` makes it prompt rather than take a password from a command line
+  # every process on the machine can read. It exits 0 on a wrong one, so the
+  # status is read back rather than the exit status trusted.
+  sudo sysadminctl -screenLock off -password - || true
+
+  if screen_lock | grep -q 'screenLock is off'; then
+    echo "the screen lock is off"
+  else
+    echo "could not turn the screen lock off" >&2
+  fi
+else
+  echo
+  echo "warning: $(screen_lock). A locked session keeps" >&2
+  echo "running, but every screenshot and recording taken over SSH comes out" >&2
+  echo "black, so a session cannot show that what it changed works. Run:" >&2
+  echo >&2
+  echo "  sudo sysadminctl -screenLock off -password -" >&2
+  echo >&2
+  echo "It asks for this account's password, which is why it is not done here:" >&2
+  echo "there is no terminal to type one at." >&2
+fi
+
+# macOS updates
+
+# Downloaded, never installed. An update that installs itself restarts the Mac,
+# and a restart takes every session's worktree state, every running build and
+# every browser with it — and then waits at the login window if auto-login is
+# off. Downloaded means the install is a decision somebody makes, on a machine
+# they have looked at, and it takes minutes rather than an hour of downloading.
+#
+# ConfigDataInstall and CriticalUpdateInstall stay on. Those are XProtect, its
+# remediator and the security data files: they install in place, without a
+# restart and without a dialog, which is the one kind of automatic update that
+# costs nothing here.
+#
+# Rapid Security Response — Background Security Improvement, as of 2026 — is not
+# among them. It moved to declarative device management
+# (com.apple.configuration.softwareupdate.settings), which needs a supervised
+# MDM enrollment, so there is no key here to set it with either way. It is on by
+# default and it can restart the Mac; nothing in this repo can change that.
+#
+# In /Library/Preferences, because these govern the machine rather than the
+# account: a bare com.apple.SoftwareUpdate from a user shell is that user's own
+# domain and nothing reads it. The MDM profile payload carrying the same keys is
+# deprecated in macOS 26 and gone in 27, but that is how a fleet locks the
+# setting down — the local preferences these toggles read and write are a
+# different path, and this Mac is enrolled in nothing.
+#
+# Read back through sudo as well as written through it: `defaults` run by root
+# creates a plist the account cannot read, so a guard that read it as the user
+# would miss on a Mac where the file did not exist before — and then write on
+# every run.
+set_machine_default() {
+  local domain="$1" key="$2" type="$3" value="$4" plist="/Library/Preferences/$1" current
+
+  current="$(sudo defaults read "$plist" "$key" 2>/dev/null || true)"
+
+  if [ "$current" = "$(as_read "$type" "$value")" ]; then
+    return 0
+  fi
+
+  if ! sudo defaults write "$plist" "$key" "$type" "$value"; then
+    echo "could not set $key in $plist" >&2
+    return 0
+  fi
+
+  echo "$domain $key is now $value"
+}
+
+set_machine_default com.apple.SoftwareUpdate AutomaticCheckEnabled -bool true
+set_machine_default com.apple.SoftwareUpdate AutomaticDownload -bool true
+set_machine_default com.apple.SoftwareUpdate AutomaticallyInstallMacOSUpdates -bool false
+set_machine_default com.apple.SoftwareUpdate ConfigDataInstall -bool true
+set_machine_default com.apple.SoftwareUpdate CriticalUpdateInstall -bool true
+
 # The login session
 
 auto_login_user="$(
@@ -82,4 +245,96 @@ else
   echo "Turn it on in System Settings > Users & Groups > Automatic login, which" >&2
   echo "needs FileVault off. This script will not: it means writing the account" >&2
   echo "password to /etc/kcpassword, obfuscated rather than encrypted." >&2
+fi
+
+# Screen Sharing
+
+# Checked, not turned on. `launchctl enable system/com.apple.screensharing`
+# clears the Disabled flag the way remote-login.sh does for sshd, but for this
+# job that is only half of it: the TCC rights the screen sharing agent needs are
+# registered by the Sharing pane itself, so a Mac enabled from a script ends up
+# with the job loaded, the toggle still reading off, and nothing answering. So
+# the port is what is looked at rather than launchd's opinion of the job.
+#
+# It matters more than the other two: Screen Sharing is how the privacy
+# permissions in the README get granted, and those are what let a session take a
+# screenshot at all.
+if nc -z -G 1 -w 1 127.0.0.1 5900 >/dev/null 2>&1; then
+  echo "Screen Sharing is on"
+else
+  echo
+  echo "warning: nothing is answering VNC on this Mac, so Screen Sharing is off." >&2
+  echo "Turn it on in System Settings > General > Sharing. A script cannot: the" >&2
+  echo "Sharing pane is what registers the screen recording rights the agent" >&2
+  echo "needs, and launchctl alone leaves the job loaded and nothing listening." >&2
+  echo >&2
+  echo "It is the way in for everything else that needs a click, including the" >&2
+  echo "privacy permissions the README lists." >&2
+fi
+
+# Spotlight
+
+# Kept out of the folders the sessions work in. A checkout is a few thousand
+# files; the same checkout with node_modules in it is a few hundred thousand, and
+# every worktree is another copy — so mds spends a core walking files nobody will
+# ever search for by name, again after every install.
+#
+# Checked, not set, because on current macOS nothing scriptable is honoured:
+#
+#   - `.metadata_never_index` in the folder is read at a volume root only. Put in
+#     an ordinary directory it is inert, and a file created under one is indexed
+#     within the minute exactly as if it were not there.
+#   - `mdutil -i off` takes a volume or a store, not a path, and turning
+#     indexing off for the whole data volume is not what is wanted — Spotlight
+#     still has to find an app.
+#   - The Exclusions array in VolumeConfiguration.plist, below, is the privacy
+#     list itself, and root can write it. It changes nothing: mds holds its own
+#     copy and only the Sharing pane's IPC makes it re-read, where
+#     `launchctl kickstart -k system/com.apple.metadata.mds` is refused outright
+#     while SIP is on.
+#   - Renaming a folder to end in `.noindex` does work, and is the one thing that
+#     does. It is also not available here: every session, every worktree and
+#     every launchd job names ~/projects.
+#
+# So the list is read back and the folders missing from it are named. Reading it
+# needs root, and a Mac being provisioned by hand should not meet a second
+# password prompt inside a check.
+exclusions=/System/Volumes/Data/.Spotlight-V100/VolumeConfiguration.plist
+
+# ~/projects covers Claude Code's worktrees, which it keeps in
+# <repo>/.claude/worktrees inside the checkout they belong to. The two outside it
+# are herdr's, which collects them per machine rather than per repo, and
+# ~/.claude-dotfiles, a checkout like any other but hidden because it is what
+# makes the account rather than work done in it.
+spotlight_folders="$HOME/projects
+$HOME/.herdr/worktrees
+$HOME/.claude-dotfiles/.claude/worktrees"
+
+if ! sudo -n true 2>/dev/null; then
+  echo "sudo wants a password, so the Spotlight privacy list was not read"
+else
+  excluded="$(sudo -n plutil -extract Exclusions json -o - "$exclusions" 2>/dev/null || true)"
+  missing=""
+
+  while IFS= read -r folder; do
+    if ! printf '%s' "$excluded" | grep -qF "\"$folder\""; then
+      missing="$missing  $folder
+"
+    fi
+  done <<EOF
+$spotlight_folders
+EOF
+
+  if [ -z "$missing" ]; then
+    echo "Spotlight is out of the project folders"
+  else
+    echo
+    echo "warning: Spotlight still indexes these:" >&2
+    printf '%s' "$missing" >&2
+    echo >&2
+    echo "Add them in System Settings > Spotlight > Search Privacy, over Screen" >&2
+    echo "Sharing. Only that pane can: it hands the list to the running mds," >&2
+    echo "where a write to the file underneath it is ignored and the reload that" >&2
+    echo "would fix that is refused while SIP is on." >&2
+  fi
 fi
