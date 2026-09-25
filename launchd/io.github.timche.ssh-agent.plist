@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Rendered by claude/ssh-agent.sh, because launchd expands neither ~ nor $HOME
+     in a plist and every path here is inside one. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.github.timche.ssh-agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__AGENT__</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Unconditional, unlike boswell's: this job is never meant to be finished
+       with, and a restart is also how the key is re-read after the token or the
+       network came back. bootout is the only thing that stops it. -->
+  <key>KeepAlive</key>
+  <true/>
+  <!-- Long enough that a Mac booting without a network retries at the same pace
+       the agent itself does rather than spinning. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <!-- launchd hands a job almost no PATH, and op is wherever Homebrew put it, so
+       the directory it was found in at install time is rendered in front. The two
+       paths are here rather than left to the wrapper's $HOME because launchd hands
+       a job the account's home directory, which is not necessarily the one this was
+       installed from. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__PATH__</string>
+    <key>AGENT_SOCKET</key>
+    <string>__SOCKET__</string>
+    <key>OP_SERVICE_ACCOUNT_TOKEN_FILE</key>
+    <string>__TOKEN_FILE__</string>
+    <key>SIGNING_KEY_OP_ITEM</key>
+    <string>__OP_ITEM__</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__LOG__</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG__</string>
+</dict>
+</plist>
