@@ -223,11 +223,24 @@ set_machine_default() {
   echo "$domain $key is now $value"
 }
 
-set_machine_default com.apple.SoftwareUpdate AutomaticCheckEnabled -bool true
 set_machine_default com.apple.SoftwareUpdate AutomaticDownload -bool true
 set_machine_default com.apple.SoftwareUpdate AutomaticallyInstallMacOSUpdates -bool false
 set_machine_default com.apple.SoftwareUpdate ConfigDataInstall -bool true
 set_machine_default com.apple.SoftwareUpdate CriticalUpdateInstall -bool true
+
+# Checking for updates at all is the one of the five that is no longer a key
+# here. macOS 26 takes an AutomaticCheckEnabled written to that plist and drops
+# it — the key is simply gone from the file afterwards, by every way of reading
+# it — so `softwareupdate --schedule` is what is left, and it is the documented
+# switch anyway. Without it nothing is ever downloaded and AutomaticDownload
+# above has nothing to do.
+if softwareupdate --schedule 2>&1 | grep -qi ' on$'; then
+  echo "macOS checks for updates on its own"
+elif sudo softwareupdate --schedule on >/dev/null 2>&1; then
+  echo "macOS now checks for updates on its own"
+else
+  echo "could not turn automatic update checks on" >&2
+fi
 
 # The login session
 

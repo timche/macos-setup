@@ -240,23 +240,21 @@ software_update() {
 }
 export -f software_update
 
-for pair in AutomaticCheckEnabled:1 AutomaticDownload:1 \
-            AutomaticallyInstallMacOSUpdates:0 \
+for pair in AutomaticDownload:1 AutomaticallyInstallMacOSUpdates:0 \
             ConfigDataInstall:1 CriticalUpdateInstall:1; do
   key="${pair%%:*}"
   want="${pair##*:}"
   got="$(software_update "$key" 2>/dev/null || echo absent)"
 
+  # The value is named rather than only judged, because the way this goes wrong on
+  # a new macOS is a key that is written and then quietly dropped — which is what
+  # AutomaticCheckEnabled does on 26, and why it is `softwareupdate --schedule`
+  # below rather than a fifth key here.
   check "SoftwareUpdate $key is $want (read $got)" "[ \"$got\" = $want ]"
 done
 
-echo "  ..    macOS $(sw_vers -productVersion), SoftwareUpdate as seen three ways:"
-for key in AutomaticCheckEnabled AutomaticDownload AutomaticallyInstallMacOSUpdates; do
-  plist=/Library/Preferences/com.apple.SoftwareUpdate
-  echo "        $key user=$(defaults read "$plist" "$key" 2>&1 | tail -1)" \
-    "root=$(sudo -n defaults read "$plist" "$key" 2>&1 | tail -1)" \
-    "file=$(sudo -n plutil -extract "$key" raw "$plist.plist" 2>&1 | tail -1)"
-done
+check "macOS checks for updates on its own" \
+  'softwareupdate --schedule 2>&1 | grep -qi " on$"'
 
 # The guard on every one of those writes, which is the whole of what makes a
 # re-run safe: a second pass has nothing left to change and says nothing. `is now`
