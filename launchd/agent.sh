@@ -36,8 +36,14 @@ say() {
   printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
 }
 
-# The socket the killed process left behind is still a file, and ssh-agent will
-# not bind over one.
+# A wrapper that was killed outright rather than signalled never reached the trap
+# below, and left an ssh-agent behind holding the key with no socket anybody can
+# reach it through. Matched on the whole command line, so it is this agent and
+# never somebody else's.
+pkill -f "ssh-agent -D -a $sock" 2>/dev/null
+
+# The socket the dead process left behind is still a file, and ssh-agent will not
+# bind over one.
 rm -f "$sock"
 
 ssh-agent -D -a "$sock" &
