@@ -80,8 +80,8 @@ if ! gh auth status >/dev/null 2>&1; then
   echo "  - $repo/claude/login.sh — GitHub and Claude Code, and the rerun that"
   echo "    fetches the dotfiles in between."
 else
-  # claude arrives with the dotfiles, through mise, in a shims directory this
-  # shell has no reason to have on PATH.
+  # claude arrives with the dotfiles, from Anthropic's installer into
+  # ~/.local/bin, behind the mise shims this shell also has no reason to have.
   export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
 
   if ! command -v claude >/dev/null 2>&1; then

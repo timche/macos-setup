@@ -83,8 +83,10 @@ fi
 
 # Claude Code
 
-# Last, because claude arrives with the dotfiles the rerun above fetches, through
-# mise, in a shims directory this shell has no reason to have on PATH.
+# Last, because claude arrives with the dotfiles the rerun above fetches: from
+# Anthropic's own installer into ~/.local/bin, ahead of which the dotfiles put
+# the mise shims that carry the runtimes. This shell has a reason for neither
+# directory until now.
 export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
 
 if ! command -v claude >/dev/null 2>&1; then
