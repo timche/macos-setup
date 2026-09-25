@@ -1,0 +1,11 @@
+# Two services, which is the least that proves compose reached the daemon rather
+# than only resolving as a plugin. alpine because it is the smallest thing a
+# registry will hand over, and a sleep because a container that exits immediately
+# is one `ps` cannot be asked about.
+services:
+  one:
+    image: alpine
+    command: sleep 60
+  two:
+    image: alpine
+    command: sleep 60

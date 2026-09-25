@@ -52,6 +52,65 @@ check "git came with the command line tools" \
 check "tailscale is installed" \
   '[ -d /Applications/Tailscale.app ] || command -v tailscale'
 
+# docker, which on a Mac is a Linux VM and a CLI pointed into it.
+check "colima installed"         'command -v colima'
+check "docker installed"         'command -v docker'
+check "docker-compose installed" 'brew list --formula -1 | grep -qx docker-compose'
+check "docker-buildx installed"  'brew list --formula -1 | grep -qx docker-buildx'
+
+# Homebrew puts the plugins in its own prefix rather than the ~/.docker/cli-plugins
+# the CLI searches by itself, so a docker that cannot find them has compose and
+# buildx as nothing at all. Exactly once, because the merge runs on every provision.
+plugin_dirs() {
+  jq -r '.cliPluginsExtraDirs // [] | .[]' "$HOME/.docker/config.json"
+}
+export -f plugin_dirs
+
+check "docker's config names Homebrew's plugin directory exactly once" \
+  '[ "$(plugin_dirs | grep -cxF /opt/homebrew/lib/docker/cli-plugins)" = 1 ]'
+check "docker compose resolves as a plugin" 'docker compose version'
+check "docker buildx resolves as a plugin"  'docker buildx version'
+
+# The VM's shape, which is the machine's rather than a number in the script. The
+# arithmetic is spelled out again instead of sourced, because what this asserts is
+# that docker.sh read the hardware at all.
+colima_value() {
+  sed -n "s/^$1: *//p" "$HOME/.colima/default/colima.yaml" | head -1
+}
+export -f colima_value
+
+want_cpu=$(($(sysctl -n hw.ncpu) - 2))
+[ "$want_cpu" -lt 2 ] && want_cpu=2
+
+want_memory=$(($(sysctl -n hw.memsize) / 1073741824 / 2))
+[ "$want_memory" -lt 2 ] && want_memory=2
+
+check "colima has a profile config" '[ -f "$HOME/.colima/default/colima.yaml" ]'
+check "colima's VM is every core but two" \
+  "[ \"\$(colima_value cpu)\" = $want_cpu ]"
+check "colima's VM is half the memory" \
+  "[ \"\$(colima_value memory)\" = $want_memory ]"
+check "colima's VM has a 100GiB disk" '[ "$(colima_value disk)" = 100 ]'
+check "colima's VM is vz with rosetta" \
+  '[ "$(colima_value vmType)" = vz ] && [ "$(colima_value rosetta)" = true ]'
+
+# The VM itself, which a runner cannot have: GitHub's macOS machines are VMs
+# already and Virtualization.framework inside one refuses outright with
+# "Virtualization is not available on this hardware", with or without rosetta. Said
+# out loud, because a suite that quietly asserted nothing here would read the same
+# on a Mac where docker is broken.
+if colima status >/dev/null 2>&1; then
+  check "docker's context is colima" '[ "$(docker context show)" = colima ]'
+  check "a container runs" 'docker run --rm hello-world'
+  check "a two-service compose file comes up and goes down" \
+    'docker compose -f "$root/test/compose.yaml" up -d &&
+     running="$(docker compose -f "$root/test/compose.yaml" ps -q | grep -c .)";
+     docker compose -f "$root/test/compose.yaml" down &&
+     [ "$running" = 2 ]'
+else
+  echo "  --    the colima VM is not running, so docker itself was not checked"
+fi
+
 # Nothing in the generic half has an opinion about the shell or the dotfiles: both
 # are claude-dotfiles', which installs them as symlinks out of its own checkout.
 # A runner may well arrive with rc files of its own, so the link is the assertion
