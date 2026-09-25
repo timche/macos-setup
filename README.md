@@ -29,21 +29,60 @@ What the scripts cannot do happens at the Mac itself, with a screen and a keyboa
 
 1. Setup Assistant: the account the machine is for, as an administrator. An Apple ID only matters for Xcode, which `xcodes` downloads with it; the iCloud features can all stay off.
 2. FileVault off, then Automatic login for that account in System Settings > Users & Groups. Auto-login needs FileVault off, and everything that lives in the login session waits for it after every restart.
-3. Remote Login and Screen Sharing on, in System Settings > General > Sharing: the first is how the bootstrap is run from another machine over the LAN, the second is how the approvals that need a click get made once the screen is gone.
+3. Remote Login and Screen Sharing on, in System Settings > General > Sharing: the first is how the bootstrap is run from another machine over the LAN, the second is how everything that needs a click gets done once the screen is gone, including the [privacy permissions](#privacy-permissions) below. Screen Sharing is the one of the two no script can turn on, because that pane is also what registers the rights the sharing agent needs.
 
-Then, over SSH on the LAN, the `bash -s claude` form above. It asks, in order, for the sudo password, a tailnet login URL, the Apple ID and a 2FA code for Xcode, then a GitHub device code, a Claude Code login and the 1Password service-account token.
+Then, over SSH on the LAN, the `bash -s claude` form above. It asks, in order, for the sudo password, the account password to turn the screen lock off, a tailnet login URL, the Apple ID and a 2FA code for Xcode, then a GitHub device code, a Claude Code login and the 1Password service-account token.
 
-Afterwards, in the Tailscale admin console: approve the advertised subnet and exit node, add an `ssh` rule for whoever should reach the Mac, and disable key expiry for it, since a node whose key expires drops off the tailnet after 180 days until somebody logs in at it again.
+Afterwards, over Screen Sharing: the [privacy permissions](#privacy-permissions) below, and the project folders added to System Settings > Spotlight > Search Privacy. `machine.sh` names both every time it runs, so a Mac that is missing either says so rather than being quietly slower and quietly unable to take a screenshot.
+
+And in the Tailscale admin console: approve the advertised subnet and exit node, add an `ssh` rule for whoever should reach the Mac, and disable key expiry for it, since a node whose key expires drops off the tailnet after 180 days until somebody logs in at it again.
 
 ## The machine
 
-`machine.sh` installs Homebrew and the four packages the rest depends on, turns Remote Login on if it is off, sets the machine to restart after power loss and never sleep, brings tailscale up as a system daemon serving Tailscale SSH, puts docker on the Mac as a colima VM, hardens sshd down to keys only, no root, one user, and — only where there is a terminal to type an Apple ID at — installs Xcode.
+`machine.sh` installs Homebrew and the four packages the rest depends on, turns Remote Login on if it is off, brings tailscale up as a system daemon serving Tailscale SSH, puts docker on the Mac as a colima VM, hardens sshd down to keys only, no root, one user, and — only where there is a terminal to type an Apple ID at — installs Xcode.
 
-One thing it deliberately does not do, because it is the one that needs somebody looking at the screen, which on a headless Mac means Screen Sharing:
+`unattended.sh` is the part that makes several parallel sessions on it possible, and all of it is one idea: nothing on this Mac may stop and wait for a click that nobody is there to make.
 
-- **Auto-login.** It only checks, and says so when the account that logs in is not the one running the script. This matters more than it looks: a LaunchAgent lives in the `gui/<uid>` domain, which exists only while somebody is logged in at the console, so a Mac sitting at its login window is a Mac where neither docker nor anything the Claude half installs is running. Tailscale is deliberately not in that list — its daemon is a LaunchDaemon and comes up without a session, which is why the Mac stays reachable even when this goes wrong. Turning auto-login on means writing the account password to `/etc/kcpassword`, obfuscated rather than encrypted, and that is a decision for whoever owns the Mac rather than for a script. It needs FileVault off.
+- **Restart after power loss, and never sleep.** `pmset autorestart 1`, `sleep 0`, `disksleep 0`. A Mac nobody can walk up to is otherwise gone until somebody does. `displaysleep` is left alone: there is no display, and blanking one that is not there costs nothing.
+- **No crash dialogs.** `com.apple.CrashReporter DialogType none`, per user. The Electron apps under development here crash as part of the work, and each crash otherwise leaves Problem Reporter's window on the screen with the crashed process waiting behind it. The report still lands in `~/Library/Logs/DiagnosticReports`, which is where it is any use. Per user rather than per machine because the two `ReportCrash` processes read the domain of whoever owns the session the crash happened in.
+- **No screen lock.** A locked session keeps running — sshd answers, launchd keeps its jobs, builds finish — but every screenshot and recording taken over SSH comes out black, so a session cannot show that what it changed works. Two settings, not one. The screensaver's `idleTime` is still `defaults -currentHost write com.apple.screensaver idleTime -int 0`, in the ByHost domain even though Sonoma moved the engine that reads it into a sandbox. The `askForPassword` key next to it has been ignored since Sonoma; `sudo sysadminctl -screenLock off -password -` is the switch now, and it wants this account's own password rather than sudo's, so it runs only where there is a terminal to type one at and prints the command when there is not.
+- **macOS updates download but never install.** `AutomaticCheckEnabled` and `AutomaticDownload` on, `AutomaticallyInstallMacOSUpdates` off, in `/Library/Preferences/com.apple.SoftwareUpdate`. An update that installs itself restarts the Mac, and a restart takes every session's worktree state, every running build and every browser with it, then sits at the login window if auto-login is off. Downloaded means installing it is a decision somebody makes, and takes minutes rather than an hour. `ConfigDataInstall` and `CriticalUpdateInstall` stay on — XProtect and the security data files install in place, with no restart and no dialog. Rapid Security Response, renamed Background Security Improvement in 2026, is not settable here at all: it moved to declarative device management, which needs a supervised MDM enrollment. It is on, and it can restart the Mac.
+
+Three things it deliberately does not do, because each needs somebody looking at the screen, which on a headless Mac means Screen Sharing. All three are checked and named on every run rather than assumed:
+
+- **Auto-login.** This matters more than it looks: a LaunchAgent lives in the `gui/<uid>` domain, which exists only while somebody is logged in at the console, so a Mac sitting at its login window is a Mac where neither docker nor anything the Claude half installs is running. Tailscale is deliberately not in that list — its daemon is a LaunchDaemon and comes up without a session, which is why the Mac stays reachable even when this goes wrong. Turning auto-login on means writing the account password to `/etc/kcpassword`, obfuscated rather than encrypted, and that is a decision for whoever owns the Mac rather than for a script. It needs FileVault off. System Settings > Users & Groups > Automatic login.
+- **Screen Sharing.** `launchctl enable system/com.apple.screensharing` clears the `Disabled` flag exactly as `remote-login.sh` does for sshd, and for this job that is only half of it: the screen recording rights the sharing agent needs are registered by the Sharing pane itself, so a Mac enabled from a script comes out with the job loaded, the toggle still reading off and nothing answering on port 5900. So `unattended.sh` looks at the port rather than at launchd's opinion of the job, and asks for System Settings > General > Sharing. It is the one to fix first, since it is how the two below get done.
+- **The Spotlight privacy list.** `~/projects`, `~/.herdr/worktrees` and `~/.claude-dotfiles/.claude/worktrees`, in System Settings > Spotlight > Search Privacy. A checkout is a few thousand files; the same checkout with `node_modules` in it is a few hundred thousand, and every worktree is another copy, so `mds` spends a core walking files nobody will ever search for by name — again after every install. Nothing scriptable is honoured on current macOS: `.metadata_never_index` is read at a volume root only and is inert in an ordinary directory, `mdutil -i off` takes a volume rather than a path, and the `Exclusions` array in `VolumeConfiguration.plist` can be written by root but changes nothing, because `mds` holds its own copy and only that pane's IPC makes it re-read — `launchctl kickstart -k system/com.apple.metadata.mds` is refused while SIP is on. Renaming a folder to end in `.noindex` is the one mechanism that still works, and is not available to a path that every session and every launchd job names. `unattended.sh` reads the list back and names what is missing from it.
+
+`~/projects` covers Claude Code's worktrees, which it keeps in `<repo>/.claude/worktrees` inside the checkout they belong to. The two outside it are herdr's, which collects them per machine rather than per repo, and `~/.claude-dotfiles`, a checkout like any other but hidden because it is what makes the account rather than work done in it.
 
 `harden-ssh.sh` refuses to disable password logins unless the user has a key sshd could actually let them in with, because on a Mac there is no provider console to fall back to. A Mac reached with a password comes out of a run unhardened and told what to do about it. `FORCE_HARDEN=true` overrides that if you are certain of another way in.
+
+## Privacy permissions
+
+Three grants that no script can make, granted once each over Screen Sharing and then good until somebody revokes them. TCC only ever asks the screen, and there is no supported way in from an SSH session: the consent dialog cannot appear in a session with no window server of its own, and writing the grant into `TCC.db` by hand needs SIP off.
+
+The one thing worth knowing before the list: over SSH the process TCC asks about is sshd's, not the command's. Add `/usr/libexec/sshd-keygen-wrapper`, and on macOS 15 and later `com.apple.sshd-session` as well — the OpenSSH 9.8 split means either can be the one that gets asked, and granting both costs nothing. The panes take no drag from a remote session, so use the **+** button and ⇧⌘G to type a path.
+
+- **Screen Recording** — System Settings > Privacy & Security > Screen & System Audio Recording. For `screencapture` and every recording taken over SSH, which is how a session shows a change working rather than asserting it, and for herdr, which reads the panes it drives. Without it `screencapture` still exits 0 and still writes a PNG; the PNG is black.
+- **Accessibility** — System Settings > Privacy & Security > Accessibility. Same two entries. This is what lets a session reach into another app's windows — focus, keystrokes, clicks — which is how herdr drives anything with a GUI.
+- **Notifications** — System Settings > Notifications, per app rather than per binary. For the Electron app under development, so that a notification it posts is delivered rather than dropped. Its entry only exists once the app is signed and has asked for permission at least once, so the order is run it, let it ask, then allow it; before that there is nothing in the list to switch on.
+
+To check them afterwards, over SSH:
+
+```sh
+screencapture -x /tmp/shot.png && ls -l /tmp/shot.png
+```
+
+A real desktop is hundreds of kilobytes. A black frame is a few, whatever the resolution — which is the tell, since the exit status and the file are the same either way. Copy it off and look at it if the size is ambiguous.
+
+```sh
+osascript -e 'tell application "System Events" to count processes'
+```
+
+Accessibility: a count means the grant is there, and `-25211 osascript is not allowed assistive access` means it is not.
+
+macOS 15 and later also put up a "requesting to bypass the system private window picker" dialog every so often, even with the grant in place. It is the one modal this repo cannot switch off, and it needs Screen Sharing and a click — worth knowing about when screenshots start coming back wrong for no reason.
 
 ## Tailscale
 
