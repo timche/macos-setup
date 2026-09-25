@@ -25,15 +25,37 @@ Both halves are safe to re-run, and both are careful about what is already there
 
 ## The machine
 
-`machine.sh` installs Homebrew and the four packages the rest depends on, turns Remote Login on if it is off, sets the machine to restart after power loss and never sleep, installs tailscale if there is none, and then hardens sshd down to keys only, no root, one user.
+`machine.sh` installs Homebrew and the four packages the rest depends on, turns Remote Login on if it is off, sets the machine to restart after power loss and never sleep, installs tailscale if there is none, puts docker on the Mac as a colima VM, and then hardens sshd down to keys only, no root, one user.
 
 Three things it deliberately does not do, all for the same reason — they need somebody looking at the screen, which on a headless Mac means Screen Sharing:
 
-- **Auto-login.** It only checks, and says so when the account that logs in is not the one running the script. This matters more than it looks: a LaunchAgent lives in the `gui/<uid>` domain, which exists only while somebody is logged in at the console, so a Mac sitting at its login window is a Mac where nothing the Claude half installs is running. Turning it on means writing the account password to `/etc/kcpassword`, obfuscated rather than encrypted, and that is a decision for whoever owns the Mac rather than for a script. It needs FileVault off.
+- **Auto-login.** It only checks, and says so when the account that logs in is not the one running the script. This matters more than it looks: a LaunchAgent lives in the `gui/<uid>` domain, which exists only while somebody is logged in at the console, so a Mac sitting at its login window is a Mac where neither docker nor anything the Claude half installs is running. Turning it on means writing the account password to `/etc/kcpassword`, obfuscated rather than encrypted, and that is a decision for whoever owns the Mac rather than for a script. It needs FileVault off.
 - **The tailscale system extension**, which has to be allowed once in System Settings before anything routes.
 - **Signing in to the tailnet**, which is the app's own flow.
 
 `harden-ssh.sh` refuses to disable password logins unless the user has a key sshd could actually let them in with, because on a Mac there is no provider console to fall back to. A Mac reached with a password comes out of a run unhardened and told what to do about it. `FORCE_HARDEN=true` overrides that if you are certain of another way in.
+
+## Docker
+
+`docker.sh` installs colima, the docker CLI and the compose and buildx plugins, writes the shape of a Linux VM into colima's profile config, and hands the starting of that VM to `brew services` so that it comes back with the machine. There is no Docker Desktop here: that is an app, with an installer that expects somebody at the screen and a licence to go with it, where colima is a CLI that starts a VM and gets out of the way.
+
+The VM is Virtualization.framework — `vmType: vz` — with Rosetta on, which is what runs an amd64 image at close to native speed. It gets every core but two and half the memory, both read from the hardware so that a different Mac needs no edit, and a 100GiB disk, which is a ceiling rather than a reservation because the image is sparse.
+
+`brew services` means a LaunchAgent, and a LaunchAgent lives in the `gui/<uid>` domain — so docker is running only once the Mac has logged itself in, exactly like the agent holding the signing key. A Mac at its login window has no docker.
+
+To see where it is:
+
+```sh
+colima status                                # the VM, and the socket docker talks to
+docker context show                          # colima, the context colima sets when it starts
+docker run --rm hello-world
+brew services list                           # whether the LaunchAgent is loaded
+tail -f /opt/homebrew/var/log/colima.log     # why the VM did not come up
+```
+
+The VM, its disk, its images and its volumes are all under `~/.colima`, and nothing outside it belongs to docker. `colima delete` starts over, and is also how all of that is lost.
+
+To resize it, edit `~/.colima/default/colima.yaml` and restart — `colima stop && colima start --edit` does both. That file is the one `docker.sh` writes, and colima rewrites it in its own fully commented form on the first start. `cpu` and `memory` take effect at the next start and a disk can grow, but a disk cannot shrink and `vmType` and `mountType` are fixed when the VM is created, so changing either of those means deleting the VM. Re-running `docker.sh` resizes nothing: it reports where the config and the hardware disagree and leaves whatever is there alone.
 
 ## The Claude Code overlay
 
