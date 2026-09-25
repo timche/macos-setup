@@ -49,8 +49,62 @@ check "op is where launchd will look for it" '[ -x /opt/homebrew/bin/op ]'
 check "git came with the command line tools" \
   '[ -x /Library/Developer/CommandLineTools/usr/bin/git ] || xcode-select -p'
 
-check "tailscale is installed" \
-  '[ -d /Applications/Tailscale.app ] || command -v tailscale'
+# tailscale, which here is the open-source tailscaled from Homebrew rather than the
+# app: a system daemon, so that a Mac with no login session is still on the tailnet.
+check "tailscaled installed"      'command -v tailscaled'
+check "the tailscale CLI answers" 'tailscale version'
+
+# The daemon is in the system domain, which needs root to read — and a Mac being
+# provisioned by hand should not meet a password prompt inside a test.
+if sudo -n true 2>/dev/null; then
+  check "tailscaled is a loaded system daemon" \
+    'sudo -n launchctl print system/com.tailscale.tailscaled ||
+     sudo -n launchctl print system/sh.brew.tailscale ||
+     sudo -n launchctl print system/homebrew.mxcl.tailscale'
+else
+  echo "  --    sudo wants a password, so tailscaled's daemon was not checked"
+fi
+
+# The prefs, which tailscale.sh writes whether or not the node has ever logged in.
+# Readable without root on macOS; the sudo is the fallback for a daemon that
+# disagrees.
+prefs() {
+  tailscale debug prefs 2>/dev/null || sudo -n tailscale debug prefs 2>/dev/null
+}
+export -f prefs
+
+check "tailscale serves ssh"          '[ "$(prefs | jq -r .RunSSH)" = true ]'
+check "tailscale advertises an exit node" \
+  'prefs | jq -e "(.AdvertiseRoutes // []) | index(\"0.0.0.0/0\") and index(\"::/0\")"'
+
+# The subnet route is derived from the hardware, so what is asserted is that the
+# route this Mac advertises is the one its own address sits in — not a number
+# repeated from the script. python3 because the arithmetic is the thing under test
+# and awk on a Mac has no bitwise operators to redo it with.
+lan_route() {
+  prefs | jq -r '(.AdvertiseRoutes // [])[] | select(. != "0.0.0.0/0" and . != "::/0")'
+}
+export -f lan_route
+
+default_address() {
+  local iface
+  iface="$(route -n get default 2>/dev/null | awk '/interface:/ { print $2; exit }')"
+  [ -n "$iface" ] && ipconfig getifaddr "$iface"
+}
+export -f default_address
+
+if [ -z "$(default_address)" ]; then
+  echo "  --    no default route, so the advertised subnet was not checked"
+elif ! command -v python3 >/dev/null 2>&1; then
+  echo "  --    no python3, so the advertised subnet was not checked"
+else
+  check "the advertised subnet is the LAN this Mac is on" \
+    'python3 -c "
+import ipaddress, sys
+address, route = sys.argv[1], sys.argv[2]
+sys.exit(0 if ipaddress.ip_address(address) in ipaddress.ip_network(route) else 1)
+" "$(default_address)" "$(lan_route)"'
+fi
 
 # docker, which on a Mac is a Linux VM and a CLI pointed into it.
 check "colima installed"         'command -v colima'
