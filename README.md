@@ -73,7 +73,7 @@ scutil --dns | grep -B2 -A2 100.100.100.100   # the resolver file, as macOS read
 
 `docker.sh` installs colima, the docker CLI and the compose and buildx plugins, writes the shape of a Linux VM into colima's profile config, and hands the starting of that VM to `brew services` so that it comes back with the machine. There is no Docker Desktop here: that is an app, with an installer that expects somebody at the screen and a licence to go with it, where colima is a CLI that starts a VM and gets out of the way.
 
-The VM is Virtualization.framework — `vmType: vz` — with Rosetta on, which is what runs an amd64 image at close to native speed. It gets every core but two and half the memory, both read from the hardware so that a different Mac needs no edit, and a 100GiB disk, which is a ceiling rather than a reservation because the image is sparse.
+The VM is Virtualization.framework — `vmType: vz` — with Rosetta on, which is what runs an amd64 image at close to native speed. It gets every core but two and a quarter of the memory — the rest is for the parallel sessions running browsers and Electron outside it, since a VM rarely hands memory back — both read from the hardware so that a different Mac needs no edit, and a 100GiB disk, which is a ceiling rather than a reservation because the image is sparse.
 
 `brew services` means a LaunchAgent, and a LaunchAgent lives in the `gui/<uid>` domain — so docker is running only once the Mac has logged itself in, exactly like the agent holding the signing key. A Mac at its login window has no docker.
 

@@ -104,7 +104,10 @@ fi
 # The VM's shape
 
 # All the cores but two, so that macOS and whatever is watching the machine keep
-# somewhere to run, and half the memory. Read from the hardware rather than
+# somewhere to run, and a quarter of the memory: a VM rarely hands memory back to
+# macOS, and the parallel sessions running browsers and Electron outside it are
+# what the rest is for. Cores are shared rather than reserved, so they need no
+# such cap. Read from the hardware rather than
 # written down: this repo is aimed at one Mac, but nothing in it should have to be
 # edited to suit the next one.
 cores="$(sysctl -n hw.ncpu)"
@@ -113,7 +116,7 @@ if [ "$cpu" -lt 2 ]; then
   cpu=2
 fi
 
-memory=$(($(sysctl -n hw.memsize) / 1073741824 / 2))
+memory=$(($(sysctl -n hw.memsize) / 1073741824 / 4))
 if [ "$memory" -lt 2 ]; then
   memory=2
 fi

@@ -136,13 +136,13 @@ export -f colima_value
 want_cpu=$(($(sysctl -n hw.ncpu) - 2))
 [ "$want_cpu" -lt 2 ] && want_cpu=2
 
-want_memory=$(($(sysctl -n hw.memsize) / 1073741824 / 2))
+want_memory=$(($(sysctl -n hw.memsize) / 1073741824 / 4))
 [ "$want_memory" -lt 2 ] && want_memory=2
 
 check "colima has a profile config" '[ -f "$HOME/.colima/default/colima.yaml" ]'
 check "colima's VM is every core but two" \
   "[ \"\$(colima_value cpu)\" = $want_cpu ]"
-check "colima's VM is half the memory" \
+check "colima's VM is a quarter of the memory" \
   "[ \"\$(colima_value memory)\" = $want_memory ]"
 check "colima's VM has a 100GiB disk" '[ "$(colima_value disk)" = 100 ]'
 check "colima's VM is vz with rosetta" \
