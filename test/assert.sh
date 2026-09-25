@@ -245,8 +245,17 @@ for pair in AutomaticCheckEnabled:1 AutomaticDownload:1 \
             ConfigDataInstall:1 CriticalUpdateInstall:1; do
   key="${pair%%:*}"
   want="${pair##*:}"
+  got="$(software_update "$key" 2>/dev/null || echo absent)"
 
-  check "SoftwareUpdate $key is $want" "[ \"\$(software_update $key)\" = $want ]"
+  check "SoftwareUpdate $key is $want (read $got)" "[ \"$got\" = $want ]"
+done
+
+echo "  ..    macOS $(sw_vers -productVersion), SoftwareUpdate as seen three ways:"
+for key in AutomaticCheckEnabled AutomaticDownload AutomaticallyInstallMacOSUpdates; do
+  plist=/Library/Preferences/com.apple.SoftwareUpdate
+  echo "        $key user=$(defaults read "$plist" "$key" 2>&1 | tail -1)" \
+    "root=$(sudo -n defaults read "$plist" "$key" 2>&1 | tail -1)" \
+    "file=$(sudo -n plutil -extract "$key" raw "$plist.plist" 2>&1 | tail -1)"
 done
 
 # The guard on every one of those writes, which is the whole of what makes a
@@ -254,8 +263,14 @@ done
 # is what each setter prints when it writes. Given no stdin, because a Mac being
 # checked by hand has a terminal and unattended.sh would ask it for a password.
 if sudo -n true 2>/dev/null; then
+  export rerun="$("$root/unattended.sh" </dev/null 2>/dev/null || true)"
+
   check "a second unattended.sh changes nothing" \
-    '! "$root/unattended.sh" </dev/null 2>/dev/null | grep -q "is now"'
+    '! printf "%s\n" "$rerun" | grep -q "is now"'
+
+  # Named rather than only counted, because which setting failed to guard is the
+  # whole of what makes this fixable.
+  printf '%s\n' "$rerun" | sed -n 's/.*is now.*/        changed again: &/p'
 else
   echo "  --    sudo wants a password, so unattended.sh was not re-run"
 fi
