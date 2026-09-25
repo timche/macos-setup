@@ -51,16 +51,24 @@ as_read() {
 #
 # displaysleep is deliberately not among them. There is no display, and a Mac
 # blanking one it does not have costs nothing.
+power_setting() {
+  pmset -g custom | awk -v s="$1" '$1 == s { print $2; exit }'
+}
+
 set_power() {
-  local setting="$1" value="$2" current
+  local setting="$1" value="$2"
 
-  current="$(pmset -g custom | awk -v s="$setting" '$1 == s { print $2; exit }')"
-
-  if [ "$current" = "$value" ]; then
+  if [ "$(power_setting "$setting")" = "$value" ]; then
     return 0
   fi
 
-  if ! sudo pmset -a "$setting" "$value" >/dev/null 2>&1; then
+  sudo pmset -a "$setting" "$value" >/dev/null 2>&1 || true
+
+  # Read back rather than trust the exit status, which is 0 for a setting this
+  # hardware does not have — pmset takes it and then leaves it out of what it
+  # reports. A virtualised Mac has no power supply to come back from, and without
+  # this it would be told autorestart landed on every single run.
+  if [ "$(power_setting "$setting")" != "$value" ]; then
     echo "could not set $setting to $value — this Mac may not support it" >&2
     return 0
   fi
