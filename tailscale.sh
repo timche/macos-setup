@@ -1,80 +1,252 @@
 #!/bin/bash
 
-# Put tailscale on the Mac, which is the network this machine is reached over.
-# A step of its own because it is the one part of the machine that already
-# existed before this repo did: whoever set this Mac up reached it over the
-# tailnet to run any of this, so the first thing to do is look, and the best
-# outcome is to change nothing.
+# tailscale on the Mac, which is the network this machine is reached over. What it
+# leaves is a node that serves Tailscale SSH, advertises the LAN it is plugged
+# into as a subnet, and offers itself as an exit node.
 #
-# The standalone app rather than the open-source `tailscale` formula. The formula
-# is tailscaled in userspace networking, which accepts connections but does not
-# route the machine's own traffic; the app installs a system network extension
-# and behaves like tailscale does everywhere else. The cost is a one-time
-# approval in System Settings that only somebody looking at the screen can give —
-# which is why this script installs and stops there rather than pretending it can
-# bring a fresh Mac up on the tailnet unattended.
+# The open-source tailscaled from Homebrew rather than the standalone app. Both
+# can serve Tailscale SSH, so that is not the reason: tailscaled is a system
+# daemon and runs before anybody logs in, so a Mac whose auto-login fails or whose
+# GUI session dies is still on the tailnet and still reachable — where the app is
+# a login item inside a session, the same dependency that makes docker and the
+# signing agent wait for one. Tailscale call tailscaled on macOS the less-tested
+# variant and point unattended installs at it, which is what this is.
 #
-# Nothing here advertises tailscale ssh. tailscaled does not answer SSH on a Mac,
-# so the way in over the tailnet is the Remote Login sshd that remote-login.sh
-# turns on, and harden-ssh.sh's drop-in governs it.
+# A step of its own because it is the part of the machine that already existed
+# before this repo did: the Mac was on the tailnet to be reached at all, so the
+# first thing to do is look, and the best outcome is to change nothing.
 #
 # Not fatal. By the time this runs the rest of the machine is built, and a tailnet
 # can be sorted out afterwards.
 #
-# Safe to re-run: a Mac that already has tailscale, in either variant, is left
-# alone.
+# Safe to re-run: a tailscaled that is already a system daemon is left exactly as
+# it is, the prefs are written only where they differ from what is asked for here,
+# and the login is only offered when there is nobody logged in yet.
 
 set -euo pipefail
 
+if [ "$(uname -s)" != Darwin ]; then
+  echo "tailscale.sh is macOS only" >&2
+  exit 1
+fi
+
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-app=/Applications/Tailscale.app
-
-# The app's own CLI, which is where the cask leaves it. Not symlinked onto PATH:
-# the binary resolves its bundle from the path it was invoked through and refuses
-# to run through a link, so the app's "Install CLI" is the only thing that should
-# put it there.
-app_cli="$app/Contents/MacOS/Tailscale"
-
-if [ -d "$app" ]; then
-  # Presence is as far as this looks. Asking the app's binary for `status` is what
-  # would say whether it is on the tailnet, and on a Mac where the system
-  # extension has not been allowed yet that call waits rather than answering —
-  # which turned a re-run into a machine.sh that never finished.
-  cat <<EOF
-tailscale is already installed and left alone. If it is not on the tailnet, open
-the app on the screen or sign in with:
-  $app_cli up
-EOF
-
-  exit 0
-fi
-
-# The formula, if somebody chose it deliberately. Installing the app over the top
-# would leave two tailscaled with one tailnet between them.
-if command -v tailscale >/dev/null 2>&1; then
-  echo "tailscale is already installed, from the open-source package rather" \
-       "than the app — left alone"
-  exit 0
-fi
+console=https://login.tailscale.com/admin
 
 if ! command -v brew >/dev/null 2>&1 && [ -x /opt/homebrew/bin/brew ]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
-# Renamed from `tailscale`, which now aliases to it and is not promised to keep
-# doing so; the formula of the same name is the other variant entirely.
-if ! brew install --cask tailscale-app; then
-  echo "could not install tailscale — rerun $repo/tailscale.sh to try again" >&2
+# What LAN to advertise
+
+# The network behind the interface the default route leaves by, as a CIDR.
+# ifconfig rather than `ipconfig getoption`, which only answers for an address
+# DHCP handed out; the mask comes back as 0xffffff00, and counting its bits is the
+# prefix.
+lan_cidr() {
+  local iface inet address mask prefix value a b c d network
+
+  iface="$(route -n get default 2>/dev/null | awk '/interface:/ { print $2; exit }')"
+  if [ -z "$iface" ]; then
+    return 0
+  fi
+
+  inet="$(ifconfig "$iface" 2>/dev/null | awk '/inet [0-9]/ { print $2, $4; exit }')"
+  if [ -z "$inet" ]; then
+    return 0
+  fi
+
+  address="${inet%% *}"
+  mask="${inet##* }"
+
+  prefix=0
+  value=$((mask))
+  while [ "$value" -ne 0 ]; do
+    prefix=$((prefix + (value & 1)))
+    value=$((value >> 1))
+  done
+
+  IFS=. read -r a b c d <<EOF
+$address
+EOF
+
+  network=$((((a << 24) | (b << 16) | (c << 8) | d) & mask))
+
+  echo "$(((network >> 24) & 255)).$(((network >> 16) & 255)).$(((network >> 8) & 255)).$((network & 255))/$prefix"
+}
+
+# TS_ADVERTISE_ROUTES overrides it, and set-but-empty means advertise nothing —
+# the same shape as the VM repo's TS_AUTHKEY, so a machine that should not be a
+# subnet router can say so without this script being edited.
+if [ -n "${TS_ADVERTISE_ROUTES+set}" ]; then
+  routes="$TS_ADVERTISE_ROUTES"
+else
+  routes="$(lan_cidr)"
+fi
+
+# The daemon
+
+# Whichever way one got here: tailscale's own installer uses the first label, and
+# Homebrew has used both of the others for a root service. A daemon that is
+# already loaded is left alone, which is the point on this Mac — it was on the
+# tailnet before this script existed.
+daemon_label=""
+
+for label in com.tailscale.tailscaled sh.brew.tailscale homebrew.mxcl.tailscale; do
+  if sudo launchctl print "system/$label" >/dev/null 2>&1; then
+    daemon_label="$label"
+    break
+  fi
+done
+
+if [ -n "$daemon_label" ]; then
+  echo "tailscaled is already a system daemon ($daemon_label), left alone"
+else
+  # --formula because the cask of nearly the same name is the standalone app.
+  if ! command -v tailscaled >/dev/null 2>&1; then
+    if ! brew install --formula tailscale; then
+      echo "could not install tailscale — rerun $repo/tailscale.sh to try again" >&2
+      exit 0
+    fi
+  fi
+
+  # `sudo brew services start`, which Tailscale documents alongside `sudo
+  # tailscaled install-system-daemon`, because the brew service runs Homebrew's own
+  # binary: `brew upgrade tailscale` moves the daemon with it, where
+  # install-system-daemon copies the binary to /usr/local/bin and pins the daemon
+  # to that copy until somebody remembers to run it again. Root, because tailscaled
+  # owns a tunnel and has to be up before there is a login session to own it.
+  if ! sudo brew services start tailscale; then
+    echo "could not start tailscaled — 'sudo brew services list' says where it" >&2
+    echo "is, and $repo/tailscale.sh will try again." >&2
+    exit 0
+  fi
+fi
+
+# The app, if somebody installed it too. Two tailscaled with one tunnel between
+# them is a machine that drops off the tailnet at random, and which of the two
+# won is not something either of them reports.
+if [ -d /Applications/Tailscale.app ]; then
+  echo
+  echo "warning: the standalone Tailscale app is installed as well, and the two" >&2
+  echo "fight over the same tunnel. Quit it from the menu bar, remove it with" >&2
+  echo "'sudo rm -rf /Applications/Tailscale.app', and take its network extension" >&2
+  echo "out in System Settings > General > Login Items & Extensions. Nothing here" >&2
+  echo "removes it: an app somebody installed is theirs to remove." >&2
+fi
+
+# What tailscaled says about itself. Two reads of the same JSON, both of which
+# have to survive a daemon that is not answering at all.
+tailscale_status() {
+  sudo tailscale status --json 2>/dev/null | jq -r "$1 // empty" 2>/dev/null || true
+}
+
+# The prefs
+
+# Read before written. `tailscale set` is cheap, but a machine that is already
+# configured the way this asks for should come out of a run untouched — and
+# reading prefs is also the only way to tell that somebody chose something else
+# on purpose.
+prefs="$(sudo tailscale debug prefs 2>/dev/null || true)"
+
+if [ -z "$prefs" ]; then
+  echo "warning: tailscaled is not answering, so nothing was configured. 'sudo" >&2
+  echo "tailscale status' and 'sudo launchctl print system/${daemon_label:-sh.brew.tailscale}'" >&2
+  echo "say why." >&2
   exit 0
 fi
 
+# An exit node shows up in the prefs as the two default routes alongside whatever
+# subnet is advertised, which is why there is one comparison rather than two.
+want_routes="$(printf '%s\n0.0.0.0/0\n::/0\n' "$routes" | tr ',' '\n' | sed '/^[[:space:]]*$/d' | sort -u)"
+have_routes="$(printf '%s' "$prefs" | jq -r '(.AdvertiseRoutes // [])[]' | sort -u)"
+have_ssh="$(printf '%s' "$prefs" | jq -r '.RunSSH // false')"
+
+if [ "$have_ssh" = true ] && [ "$have_routes" = "$want_routes" ]; then
+  echo "tailscale already serves ssh and advertises ${routes:-no subnet} and an exit node"
+else
+  # `set` rather than `up`, which would start a login this node has already done.
+  #
+  # An exit node on macOS routes in userspace and only while the machine is awake:
+  # unattended.sh's `pmset sleep 0` is what keeps it one. IP forwarding needs
+  # nothing here — on macOS Tailscale turns it on itself when routes are
+  # advertised.
+  if sudo tailscale set --ssh --advertise-exit-node --advertise-routes="$routes"; then
+    echo "tailscale now serves ssh and advertises ${routes:-no subnet} and an exit node"
+  else
+    echo "warning: 'tailscale set' did not take — this Mac advertises whatever it" >&2
+    echo "did before. 'sudo tailscale debug prefs' says what that is." >&2
+  fi
+fi
+
+# The tailnet
+
+state="$(tailscale_status .BackendState)"
+
+if [ "$state" != Running ]; then
+  login="sudo tailscale up --ssh --advertise-exit-node --advertise-routes=$routes"
+
+  # `up` is the one command here that waits: it prints a URL to open on a machine
+  # that has a browser and sits there until somebody does. So only where there is
+  # a terminal to sit at — a provision with nobody watching is told what to run
+  # instead of hanging on it.
+  if [ -t 0 ]; then
+    echo
+    echo "Not on the tailnet yet (${state:-no state}). This prints a URL to open"
+    echo "on another machine, and waits for it:"
+    echo
+
+    if ! sudo tailscale up --ssh --advertise-exit-node --advertise-routes="$routes"; then
+      echo "warning: the tailnet login did not finish. Run it again with:" >&2
+      echo "  $login" >&2
+    fi
+  else
+    echo
+    echo "Not on the tailnet yet (${state:-no state}), and no terminal to log in"
+    echo "at. From one:"
+    echo "  $login"
+  fi
+fi
+
+# MagicDNS
+
+# tailscaled on macOS leaves the system resolver alone, where the app rewrites it,
+# so tailnet names do not resolve until something sends them to 100.100.100.100. A
+# resolver file for the tailnet's own suffix rather than the machine's DNS
+# servers: those would take every lookup on the Mac through Tailscale and break
+# all of them whenever it is down.
+suffix="$(tailscale_status .MagicDNSSuffix)"
+
+if [ -z "$suffix" ]; then
+  echo "no MagicDNS suffix to resolve yet — rerun $repo/tailscale.sh once this"
+  echo "Mac is on the tailnet and tailnet names will resolve too"
+else
+  resolver="/etc/resolver/$suffix"
+  nameserver="nameserver 100.100.100.100"
+
+  if [ "$(sudo cat "$resolver" 2>/dev/null || true)" = "$nameserver" ]; then
+    echo "$resolver already sends $suffix to Tailscale"
+  else
+    sudo mkdir -p /etc/resolver
+    printf '%s\n' "$nameserver" | sudo tee "$resolver" >/dev/null
+    echo "$resolver now sends $suffix to Tailscale"
+  fi
+fi
+
+# What the tailnet has to say
+
+# Both of these are the tailnet's rather than the machine's, and neither can be
+# done from here: an advertised route is advertised until somebody approves it,
+# and tailscaled's SSH server answers nobody until the policy says who.
 cat <<EOF
 
-tailscale is installed. Two things only somebody at the screen can do, which is
-Screen Sharing on a Mac with no display:
+Two things only the tailnet's admin console can do:
 
-  - Allow the system extension in System Settings > General > Login Items &
-    Extensions > Network Extensions. Nothing routes until it is allowed.
-  - Sign in to the tailnet, from the app or with: $app_cli up
+  - Approve this machine's subnet route${routes:+ ($routes)} and its exit node,
+    unless the policy file's autoApprovers already covers them:
+    $console/machines
+  - Allow Tailscale SSH to it — an ssh rule naming who may connect and as whom.
+    Until there is one, nothing reaches tailscaled's SSH server, and sshd on the
+    LAN is the only way in:
+    $console/acls
 EOF

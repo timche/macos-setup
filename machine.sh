@@ -68,10 +68,12 @@ echo
 echo "Done. What is left:"
 echo
 
-# Presence rather than `tailscale status`, which the app's CLI does not answer
-# from a PATH it was never added to.
-if [ ! -d /Applications/Tailscale.app ] && ! command -v tailscale >/dev/null 2>&1; then
-  echo "  - $repo/tailscale.sh — there is no tailscale on this Mac."
+# tailscale's own answer, which the Homebrew CLI gives: it exits non-zero while
+# the node is logged out as well as while there is no daemon at all, and either
+# means the same thing here. The prefix is spelled out for the same reason as
+# colima below.
+if ! /opt/homebrew/bin/tailscale status >/dev/null 2>&1; then
+  echo "  - $repo/tailscale.sh — this Mac is not on the tailnet."
 fi
 
 if [ "$xcode_left" = true ]; then
@@ -87,11 +89,12 @@ if ! /opt/homebrew/bin/colima status >/dev/null 2>&1; then
   echo "  - $repo/docker.sh — the colima VM is not running."
 fi
 
-# tailscaled does not answer SSH on a Mac, so unlike a Linux box there is no
-# second way in that the tailnet provides by itself: what governs every
-# connection is the drop-in above, and what decides who reaches it is the tailnet
-# policy.
+# tailscale.sh prints both of these with the URLs, and by the end of a run that
+# has scrolled a long way up. Tailscale SSH is the way in over the tailnet and
+# tailscaled answers it itself, so nothing in the sshd drop-in applies to those
+# sessions — the policy file is what governs them.
 cat <<'EOF'
-  - An ssh rule for this machine in the tailscale admin console, if it is meant
-    to be reachable from the tailnet at all.
+  - In the tailscale admin console: approve this machine's advertised subnet and
+    exit node, and allow Tailscale SSH to it in the policy file. Neither works
+    until the tailnet says so.
 EOF
