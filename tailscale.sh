@@ -37,16 +37,15 @@ app=/Applications/Tailscale.app
 app_cli="$app/Contents/MacOS/Tailscale"
 
 if [ -d "$app" ]; then
-  echo "tailscale is already installed"
-
-  if "$app_cli" status >/dev/null 2>&1; then
-    echo "tailscale is up"
-  else
-    echo
-    echo "tailscale is installed but not on the tailnet. Open the app on the"
-    echo "screen, or sign in with:"
-    echo "  $app_cli up"
-  fi
+  # Presence is as far as this looks. Asking the app's binary for `status` is what
+  # would say whether it is on the tailnet, and on a Mac where the system
+  # extension has not been allowed yet that call waits rather than answering —
+  # which turned a re-run into a machine.sh that never finished.
+  cat <<EOF
+tailscale is already installed and left alone. If it is not on the tailnet, open
+the app on the screen or sign in with:
+  $app_cli up
+EOF
 
   exit 0
 fi
