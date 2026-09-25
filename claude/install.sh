@@ -27,16 +27,20 @@ fi
 dotfiles="${CLAUDE_DOTFILES_DIR:-$HOME/.claude-dotfiles}"
 
 # gh clones a private repo by injecting the token itself, but the git that pulls
-# it afterwards has no idea where to find one. Whether an interactive login
-# offered to wire this up varies, and a clone that cannot be updated is worse than
-# no clone: the installer below would run from it and fail on whatever the old
-# version expected. Idempotent, and the same config gh writes itself.
-gh auth setup-git
+# it afterwards has no idea where to find one, and a clone that cannot be updated
+# is worse than no clone: the installer below would run from it and fail on
+# whatever the old version expected. So the pull is handed gh's helper for that
+# one command. Not `gh auth setup-git`: it writes gh's absolute path into
+# ~/.gitconfig, which by a rerun is a link into claude-dotfiles, shared with a VM
+# that has no /opt/homebrew — git there would stop finding credentials.
+gh_git() {
+  git -c credential.helper= -c 'credential.helper=!gh auth git-credential' "$@"
+}
 
 # Nobody but the owner can clone it, so a failure here is a message rather than
 # the end of the run: the machine machine.sh built still works.
 if [ -d "$dotfiles/.git" ]; then
-  git -C "$dotfiles" pull --ff-only ||
+  gh_git -C "$dotfiles" pull --ff-only ||
     echo "could not update $dotfiles — the installer below runs from it as it" \
          "is, which is a version behind whatever it should be" >&2
 else
