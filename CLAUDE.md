@@ -6,7 +6,7 @@ The sibling is [timche/debian-setup](https://github.com/timche/debian-setup), wh
 
 Two entry points. `bootstrap.sh` is the one a Mac with nothing on it has: a fresh Mac has no git to clone with, so it installs Homebrew — which brings the Xcode command line tools through `softwareupdate` rather than the dialog — clones the repo and hands to `machine.sh`, then to `claude.sh` if it was given the one argument it takes, `claude`. Anything else is an error, so a typo cannot quietly produce a generic Mac. Unlike `provision.sh` on the VM it never runs as root: there is no account to create, and Homebrew refuses root outright.
 
-`machine.sh` refuses root and calls `bootstrap-system.sh`, `remote-login.sh`, `unattended.sh`, `tailscale.sh`, `docker.sh`, `harden-ssh.sh` in that order. That is the whole of the machine, and none of it needs an account anywhere.
+`machine.sh` refuses root and calls `bootstrap-system.sh`, `remote-login.sh`, `unattended.sh`, `tailscale.sh`, `docker.sh`, `harden-ssh.sh` in that order, then `xcode.sh` last and only where there is a terminal — Xcode is an 11GB download behind an Apple ID and a 2FA code, so a run with nobody watching lists it as left to do instead. That is the whole of the machine, and none of it needs an account anywhere: the Apple ID Xcode wants belongs to the App Store rather than to anything this repo installs.
 
 `claude.sh` is the overlay and the second entry point. It installs nothing — every package is `bootstrap-system.sh`'s — and calls `claude/install.sh`, `claude/login.sh` and `claude/signing-key.sh` in that order: the dotfiles need a token, the token comes from the login, and the signing key needs the `user.email` the dotfiles carry. `claude/signing-key.sh` calls `claude/ssh-agent.sh` for the agent that holds the private half and `claude/register-signing-key.sh` for the public one, which `claude/install.sh` also calls once there is a token to register with.
 
@@ -30,7 +30,7 @@ Commit and push to main directly, no branch and no PR. Standing permission, and 
 
 ## Testing
 
-`.github/workflows/test.yml`, on a `macos-latest` runner, and nowhere else: there is no macOS container to put any of this in, and the suite changes the machine it runs on. It runs `machine.sh` twice with `test/assert.sh` after each, then `claude.sh` with `test/assert-claude.sh`, then `test/signing-agent.sh`, then `harden-ssh.sh` with a key seeded the way a real Mac has one.
+`.github/workflows/test.yml`, on a `macos-latest` runner, and nowhere else: there is no macOS container to put any of this in, and the suite changes the machine it runs on. It runs `machine.sh` twice with `test/assert.sh` after each, then `xcode.sh` twice — a runner arrives with several Xcodes, so what that exercises is the half of it that installs nothing — then `claude.sh` with `test/assert-claude.sh`, then `test/signing-agent.sh`, then `harden-ssh.sh` with a key seeded the way a real Mac has one.
 
 `test/signing-agent.sh` is the one worth reading. It generates a key, puts a stub `op` in front of the real one on PATH, and runs the real `claude/signing-key.sh` against a throwaway `HOME` — then asserts that the agent holds the key, that nothing under `.ssh` contains a private one, and that a commit signs and verifies. It refuses to run outside CI unless `MACOS_SETUP_TEST_ANYWAY=1`, because launchd keys a job by label per account and loading it on the real Mac would bounce the agent holding the real key.
 

@@ -27,6 +27,15 @@ jobs:
       - run: ./machine.sh
       - run: test/assert.sh
 
+      # Xcode itself, which machine.sh leaves to a run that has a terminal to type
+      # an Apple ID at, so the workflow is what calls it here. A runner arrives with
+      # several Xcodes already, which is the half this can exercise: select one,
+      # accept the licence, finish the first launch, and reach for no download.
+      # Twice, for the same reason as above.
+      - run: ./xcode.sh
+      - run: ./xcode.sh
+      - run: test/assert.sh
+
       # The overlay with nothing logged in and no service account, which is the
       # state every fresh Mac is in: every step of it has to skip rather than fail.
       - run: ./claude.sh

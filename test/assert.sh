@@ -111,6 +111,33 @@ else
   echo "  --    the colima VM is not running, so docker itself was not checked"
 fi
 
+# Xcode is xcode.sh's, which machine.sh only runs where there is a terminal to
+# type an Apple ID at — so on a runner it is the workflow that calls it, and what
+# can be asserted is the half that installs nothing. The download itself is
+# nobody's to test: it needs an Apple ID and an hour.
+xcode_app=""
+for candidate in /Applications/Xcode*.app; do
+  if [ -d "$candidate" ]; then
+    xcode_app="$candidate"
+    break
+  fi
+done
+
+if [ -n "$xcode_app" ]; then
+  check "xcode-select points into an Xcode rather than the command line tools" \
+    'case "$(xcode-select -p)" in /Applications/Xcode*.app/Contents/Developer) ;; *) exit 1 ;; esac'
+  check "xcodebuild answers" 'xcodebuild -version'
+
+  if sudo -n true 2>/dev/null; then
+    check "Xcode's licence is accepted" 'sudo -n xcodebuild -license check'
+    check "Xcode's first launch is done" 'sudo -n xcodebuild -checkFirstLaunchStatus'
+  else
+    echo "  --    sudo wants a password, so Xcode's licence was not checked"
+  fi
+else
+  echo "  --    there is no Xcode on this Mac, so xcode.sh's half was not checked"
+fi
+
 # Nothing in the generic half has an opinion about the shell or the dotfiles: both
 # are claude-dotfiles', which installs them as symlinks out of its own checkout.
 # A runner may well arrive with rc files of its own, so the link is the assertion

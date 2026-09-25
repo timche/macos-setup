@@ -45,10 +45,24 @@ fi
 "$repo/tailscale.sh"
 "$repo/docker.sh"
 
-# Last, because it is the step that turns password logins off. It skips itself
-# when there is no authorized_keys yet, rather than locking you out of a machine
-# that is nowhere near you.
+# Last of the steps that decide how this Mac is reached, because it is the one
+# that turns password logins off. It skips itself when there is no authorized_keys
+# yet, rather than locking you out of a machine that is nowhere near you.
 "$repo/harden-ssh.sh"
+
+# After everything else, because it is an 11GB download and an Apple ID typed in
+# at the time: nothing in the run should wait behind that. A terminal is the whole
+# of the condition — with none there is nobody to type it, and the footer below
+# says the step is still to do.
+xcode_left=false
+
+if [ -t 0 ]; then
+  "$repo/xcode.sh" || xcode_left=true
+else
+  xcode_left=true
+  echo
+  echo "Skipped xcode.sh — no terminal to type an Apple ID at."
+fi
 
 echo
 echo "Done. What is left:"
@@ -58,6 +72,11 @@ echo
 # from a PATH it was never added to.
 if [ ! -d /Applications/Tailscale.app ] && ! command -v tailscale >/dev/null 2>&1; then
   echo "  - $repo/tailscale.sh — there is no tailscale on this Mac."
+fi
+
+if [ "$xcode_left" = true ]; then
+  echo "  - $repo/xcode.sh — Xcode itself, which signs meru's builds. It wants a"
+  echo "    terminal, an Apple ID and an hour."
 fi
 
 # Reported here as well as by docker.sh, because the VM's first boot is the

@@ -25,7 +25,7 @@ Both halves are safe to re-run, and both are careful about what is already there
 
 ## The machine
 
-`machine.sh` installs Homebrew and the four packages the rest depends on, turns Remote Login on if it is off, sets the machine to restart after power loss and never sleep, installs tailscale if there is none, puts docker on the Mac as a colima VM, and then hardens sshd down to keys only, no root, one user.
+`machine.sh` installs Homebrew and the four packages the rest depends on, turns Remote Login on if it is off, sets the machine to restart after power loss and never sleep, installs tailscale if there is none, puts docker on the Mac as a colima VM, hardens sshd down to keys only, no root, one user, and — only where there is a terminal to type an Apple ID at — installs Xcode.
 
 Three things it deliberately does not do, all for the same reason — they need somebody looking at the screen, which on a headless Mac means Screen Sharing:
 
@@ -56,6 +56,28 @@ tail -f /opt/homebrew/var/log/colima.log     # why the VM did not come up
 The VM, its disk, its images and its volumes are all under `~/.colima`, and nothing outside it belongs to docker. `colima delete` starts over, and is also how all of that is lost.
 
 To resize it, edit `~/.colima/default/colima.yaml` and restart — `colima stop && colima start --edit` does both. That file is the one `docker.sh` writes, and colima rewrites it in its own fully commented form on the first start. `cpu` and `memory` take effect at the next start and a disk can grow, but a disk cannot shrink and `vmType` and `mountType` are fixed when the VM is created, so changing either of those means deleting the VM. Re-running `docker.sh` resizes nothing: it reports where the config and the hardware disagree and leaves whatever is there alone.
+
+## Xcode
+
+`xcode.sh` installs the full Xcode, which this Mac needs for signing builds of meru with a Developer ID certificate — the command line tools Homebrew brought are enough to compile but not the whole toolchain electron-builder reaches for. It is the one step of the machine `machine.sh` will not do unattended: Apple hands nobody an Xcode without an Apple ID, a 2FA code typed in while it is still valid, and the account password for the privileged end of the install. `machine.sh` runs it when there is a terminal and lists it under what is left when there is not.
+
+```sh
+~/macos-setup/xcode.sh
+```
+
+It stops before downloading anything if `/` has less than 40GB free, since the xip is around 11GB and unpacks to more than twice that before the copy into `/Applications`. The download comes through [`xcodes`](https://github.com/XcodesOrg/xcodes) — `--latest`, so a release and never a beta — and then the script selects what it installed, accepts the licence and runs the first launch, each one guarded so that a re-run asks for nothing.
+
+`xcodes` remembers the Apple ID and keeps its password in the login keychain. This Mac is reached over SSH, where a keychain that needs to ask for anything cannot, so that write may be refused — in which case xcodes says so and asks for the Apple ID again next time, `XCODES_USERNAME` and `XCODES_PASSWORD` in the environment answer it without a keychain at all, and `xcodes signout` clears whatever is stored.
+
+To see where it is:
+
+```sh
+xcode-select -p        # /Applications/Xcode-<version>.app/Contents/Developer
+xcodebuild -version
+xcodes installed       # every Xcode on the Mac, and which one is selected
+```
+
+Signing needs one thing `xcode.sh` has no business fetching: the Developer ID certificate and its private key in the login keychain, imported from wherever it is kept with `security import <certificate>.p12 -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign`.
 
 ## The Claude Code overlay
 
