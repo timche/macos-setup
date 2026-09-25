@@ -2,8 +2,8 @@
 
 # The whole of the machine: Homebrew and the packages, the Remote Login this Mac
 # is reached through, the power settings that bring it back on its own, the
-# tailnet, and a hardened sshd. What it leaves is a Mac worth having with no
-# account anywhere on it.
+# tailnet, docker, and a hardened sshd. What it leaves is a Mac worth having with
+# no account anywhere on it.
 #
 # An entry point, and the usual one: bootstrap.sh exists for a Mac that does not
 # have this repo yet and calls this the moment it does. Running it again from the
@@ -43,6 +43,7 @@ fi
 "$repo/remote-login.sh"
 "$repo/unattended.sh"
 "$repo/tailscale.sh"
+"$repo/docker.sh"
 
 # Last, because it is the step that turns password logins off. It skips itself
 # when there is no authorized_keys yet, rather than locking you out of a machine
@@ -57,6 +58,14 @@ echo
 # from a PATH it was never added to.
 if [ ! -d /Applications/Tailscale.app ] && ! command -v tailscale >/dev/null 2>&1; then
   echo "  - $repo/tailscale.sh — there is no tailscale on this Mac."
+fi
+
+# Reported here as well as by docker.sh, because the VM's first boot is the
+# longest thing in a run and its failure scrolls a long way up. The prefix is
+# spelled out because this shell can predate Homebrew being on any PATH —
+# bootstrap-system.sh put it on its own, not on this one.
+if ! /opt/homebrew/bin/colima status >/dev/null 2>&1; then
+  echo "  - $repo/docker.sh — the colima VM is not running."
 fi
 
 # tailscaled does not answer SSH on a Mac, so unlike a Linux box there is no

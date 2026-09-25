@@ -5,10 +5,10 @@
 # everything after that lands in a prefix the account owns.
 #
 # Every package here is one something later cannot start without: claude.sh
-# clones a private repo with gh, patches a config with jq and reads the signing
-# key out of 1Password with op, and claude-dotfiles' install.sh stops with a
-# message if it cannot find brew at all. btop is the one that is only for
-# whoever logs in to look at the machine.
+# clones a private repo with gh and reads the signing key out of 1Password with
+# op, both it and docker.sh patch a config with jq, and claude-dotfiles'
+# install.sh stops with a message if it cannot find brew at all. btop is the one
+# that is only for whoever logs in to look at the machine.
 #
 # Safe to re-run: an existing Homebrew is left alone and packages already
 # installed are skipped rather than upgraded, so a re-run is not a way to move
