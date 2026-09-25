@@ -1,0 +1,50 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # On the runner itself rather than in a container: there is no macOS container to
+  # put any of this in. The runner's account is called `runner`, which is what
+  # proves nothing here is written for the one Mac it is aimed at — and it arrives
+  # with Homebrew and passwordless sudo, so what is exercised is the second run of
+  # every step rather than the first.
+  setup:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Twice, and asserted after each: the repeat is what keeps the whole of it
+      # honest about being safe to re-run, which is the only way a change ever
+      # reaches a Mac that is already built.
+      - run: ./machine.sh
+      - run: test/assert.sh
+      - run: ./machine.sh
+      - run: test/assert.sh
+
+      # The overlay with nothing logged in and no service account, which is the
+      # state every fresh Mac is in: every step of it has to skip rather than fail.
+      - run: ./claude.sh
+      - run: test/assert-claude.sh
+
+      # The signing key and the agent that holds it, with a stub op standing in for
+      # 1Password. The one thing here that cannot be checked without a vault.
+      - run: test/signing-agent.sh
+
+      # machine.sh left the sshd drop-in out for want of a key to log in with, which
+      # is the refusal that keeps a Mac nobody can walk up to reachable. Seed a key
+      # the way a real one has and it should land. Last, because a runner has
+      # nothing after this that needs to log in.
+      - name: harden-ssh.sh with a key installed
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keygen -q -t ed25519 -N '' -C ci -f /tmp/ci
+          install -m 600 /tmp/ci.pub ~/.ssh/authorized_keys
+          ./harden-ssh.sh
+      - run: test/assert.sh
