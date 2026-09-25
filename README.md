@@ -25,15 +25,37 @@ Both halves are safe to re-run, and both are careful about what is already there
 
 ## The machine
 
-`machine.sh` installs Homebrew and the four packages the rest depends on, turns Remote Login on if it is off, sets the machine to restart after power loss and never sleep, installs tailscale if there is none, puts docker on the Mac as a colima VM, hardens sshd down to keys only, no root, one user, and — only where there is a terminal to type an Apple ID at — installs Xcode.
+`machine.sh` installs Homebrew and the four packages the rest depends on, turns Remote Login on if it is off, sets the machine to restart after power loss and never sleep, brings tailscale up as a system daemon serving Tailscale SSH, puts docker on the Mac as a colima VM, hardens sshd down to keys only, no root, one user, and — only where there is a terminal to type an Apple ID at — installs Xcode.
 
-Three things it deliberately does not do, all for the same reason — they need somebody looking at the screen, which on a headless Mac means Screen Sharing:
+One thing it deliberately does not do, because it is the one that needs somebody looking at the screen, which on a headless Mac means Screen Sharing:
 
-- **Auto-login.** It only checks, and says so when the account that logs in is not the one running the script. This matters more than it looks: a LaunchAgent lives in the `gui/<uid>` domain, which exists only while somebody is logged in at the console, so a Mac sitting at its login window is a Mac where neither docker nor anything the Claude half installs is running. Turning it on means writing the account password to `/etc/kcpassword`, obfuscated rather than encrypted, and that is a decision for whoever owns the Mac rather than for a script. It needs FileVault off.
-- **The tailscale system extension**, which has to be allowed once in System Settings before anything routes.
-- **Signing in to the tailnet**, which is the app's own flow.
+- **Auto-login.** It only checks, and says so when the account that logs in is not the one running the script. This matters more than it looks: a LaunchAgent lives in the `gui/<uid>` domain, which exists only while somebody is logged in at the console, so a Mac sitting at its login window is a Mac where neither docker nor anything the Claude half installs is running. Tailscale is deliberately not in that list — its daemon is a LaunchDaemon and comes up without a session, which is why the Mac stays reachable even when this goes wrong. Turning auto-login on means writing the account password to `/etc/kcpassword`, obfuscated rather than encrypted, and that is a decision for whoever owns the Mac rather than for a script. It needs FileVault off.
 
 `harden-ssh.sh` refuses to disable password logins unless the user has a key sshd could actually let them in with, because on a Mac there is no provider console to fall back to. A Mac reached with a password comes out of a run unhardened and told what to do about it. `FORCE_HARDEN=true` overrides that if you are certain of another way in.
+
+## Tailscale
+
+`tailscale.sh` installs the open-source `tailscale` formula, starts `tailscaled` as a root system daemon with `sudo brew services start tailscale`, and sets the three prefs this Mac is on the tailnet for: Tailscale SSH, its LAN advertised as a subnet, and itself offered as an exit node.
+
+The daemon rather than the standalone app, even though both can serve Tailscale SSH. A system daemon runs before anybody logs in, so a Mac whose auto-login fails or whose GUI session dies is still on the tailnet and still reachable — where the app is a login item inside a session, which is the dependency that already makes docker and the signing agent wait for one. Tailscale call this the less-tested variant on macOS and point unattended installs at it, which is what this Mac is. The two are not meant to coexist: two `tailscaled` fighting over one tunnel is a node that drops off at random, so `tailscale.sh` warns when it finds `/Applications/Tailscale.app` and leaves removing it to whoever installed it. `sudo brew services start` rather than `sudo tailscaled install-system-daemon`, which Tailscale documents next to it, because the brew service runs Homebrew's own binary: `brew upgrade tailscale` moves the daemon with it, where `install-system-daemon` copies the binary to `/usr/local/bin` and pins the daemon to that copy.
+
+The subnet comes from the interface the default route leaves by — its address and netmask, turned into a network and a prefix — so a Mac moved to another LAN needs a re-run rather than an edit. `TS_ADVERTISE_ROUTES` overrides it, and set-but-empty advertises no subnet at all. Nothing here touches IP forwarding: on macOS Tailscale enables it itself when routes are advertised. An exit node on macOS routes in userspace and only while the machine is awake, which is what `unattended.sh`'s `pmset sleep 0` is for.
+
+A node that has never logged in needs `tailscale up`, which prints a URL to open on a machine that has a browser and then waits for it — so `tailscale.sh` runs it only where there is a terminal to wait at, and prints the command when there is not. Everything after that is `tailscale set`, which changes prefs without starting a login, and which only runs where the prefs differ from what the script asks for. A Mac configured by hand comes out of a run untouched.
+
+MagicDNS is the one thing the daemon will not do for itself: it leaves the system resolver alone where the app rewrites it. So `tailscale.sh` writes `/etc/resolver/<tailnet>.ts.net` holding `nameserver 100.100.100.100`, which sends tailnet names to Tailscale and leaves every other lookup with the resolvers the Mac already had. Pointing the machine's own DNS servers at 100.100.100.100 would be the other way to do it, and would break all DNS whenever Tailscale is down.
+
+Two things only the tailnet can do, both in [the admin console](https://login.tailscale.com/admin): approve this machine's advertised subnet and its exit node, unless `autoApprovers` in the policy file already covers them, and allow Tailscale SSH to it with an `ssh` rule saying who may connect and as whom. Until that rule exists nothing reaches the SSH server tailscaled is running.
+
+To see where it is:
+
+```sh
+tailscale status                       # the node, the tailnet, and who else is on it
+sudo tailscale debug prefs             # RunSSH, and AdvertiseRoutes with the subnet and 0.0.0.0/0, ::/0
+sudo brew services list                # whether the daemon is loaded
+sysctl net.inet.ip.forwarding          # 1 once routes are advertised, and Tailscale's doing
+scutil --dns | grep -B2 -A2 100.100.100.100   # the resolver file, as macOS reads it
+```
 
 ## Docker
 
@@ -109,12 +131,12 @@ An `invalid format` from git rather than a `G` usually means exactly one thing: 
 
 ## Two things worth knowing
 
-The tailnet is the way in, and sshd is what answers on it: tailscaled does not serve SSH on a Mac the way it does on Linux, so the drop-in `harden-ssh.sh` installs governs every connection and there is no second door but Screen Sharing. The tailnet's own policy is what decides who gets that far.
+There are two ways in and different things govern them. Over the tailnet it is Tailscale SSH, which tailscaled answers itself: the policy file decides who may connect and as whom, and nothing in the sshd configuration has any say over those sessions. On the LAN it is sshd, which `harden-ssh.sh` locks down to keys, no root and one user, and which is what is left when Tailscale is down. Keeping both is deliberate — a tailnet that cannot be reached is no reason to be locked out of a machine in the next room — and Screen Sharing is the third door, for whoever can walk up to it.
 
 macOS reads `sshd_config` per connection — launchd holds port 22 and spawns an sshd per client — so there is nothing to restart after the drop-in lands, and a config it cannot parse breaks the next login rather than waiting for one. That is why the drop-in is checked with `sshd -t` and taken straight back out if it does not hold up.
 
 ## Environment knobs
 
-`MACOS_SETUP_REPO`, `MACOS_SETUP_DIR`, `CLAUDE_DOTFILES_REPO`, `CLAUDE_DOTFILES_DIR`, `SIGNING_KEY_OP_ITEM`, `OP_SERVICE_ACCOUNT_TOKEN_FILE`, `FORCE_HARDEN`.
+`MACOS_SETUP_REPO`, `MACOS_SETUP_DIR`, `CLAUDE_DOTFILES_REPO`, `CLAUDE_DOTFILES_DIR`, `SIGNING_KEY_OP_ITEM`, `OP_SERVICE_ACCOUNT_TOKEN_FILE`, `FORCE_HARDEN`, `TS_ADVERTISE_ROUTES`.
 
 `CLAUDE.md` has the details: the order the scripts run in, the constraints that are not obvious from reading them, and how to test.
