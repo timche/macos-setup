@@ -214,8 +214,11 @@ error)
   if brew services start colima; then
     started=true
   else
-    echo "warning: brew would not start colima. 'brew services list' says where" >&2
-    echo "it is, and 'brew services restart colima' is the usual answer." >&2
+    # launchd answers a bootstrap of a job it already has with "Bootstrap failed:
+    # 5: Input/output error" and brew hands that straight on, which is what a
+    # re-run after a start that did not take looks like.
+    echo "warning: brew would not load colima's LaunchAgent. If launchd has it" >&2
+    echo "already, 'brew services restart colima' is the way to try again." >&2
   fi
   ;;
 esac
