@@ -218,6 +218,97 @@ for pair in autorestart:1 sleep:0 disksleep:0; do
   fi
 done
 
+# Nothing on this Mac may stop and wait for a click. Three of those settings a
+# script can write, and they are asserted. Three need somebody at the screen, and
+# they are reported rather than asserted: a suite that failed on them would fail
+# on every runner and on every Mac nobody has been at yet, which is not a
+# regression in anything this repo did.
+check "a crash puts up no dialog" \
+  '[ "$(defaults read com.apple.CrashReporter DialogType)" = none ]'
+check "the screensaver never starts" \
+  '[ "$(defaults -currentHost read com.apple.screensaver idleTime)" = 0 ]'
+
+# Downloaded, never installed: an update that restarts the Mac takes every
+# session's worktree state and every running build with it. The two data-file keys
+# stay on because they install in place, with no restart and no dialog. The plist
+# path rather than the bare domain, which from a user shell is that user's own —
+# and the sudo fallback for the case where root created it unreadable.
+software_update() {
+  local plist=/Library/Preferences/com.apple.SoftwareUpdate
+
+  defaults read "$plist" "$1" 2>/dev/null || sudo -n defaults read "$plist" "$1"
+}
+export -f software_update
+
+for pair in AutomaticCheckEnabled:1 AutomaticDownload:1 \
+            AutomaticallyInstallMacOSUpdates:0 \
+            ConfigDataInstall:1 CriticalUpdateInstall:1; do
+  key="${pair%%:*}"
+  want="${pair##*:}"
+
+  check "SoftwareUpdate $key is $want" "[ \"\$(software_update $key)\" = $want ]"
+done
+
+# The guard on every one of those writes, which is the whole of what makes a
+# re-run safe: a second pass has nothing left to change and says nothing. `is now`
+# is what each setter prints when it writes. Given no stdin, because a Mac being
+# checked by hand has a terminal and unattended.sh would ask it for a password.
+if sudo -n true 2>/dev/null; then
+  check "a second unattended.sh changes nothing" \
+    '! "$root/unattended.sh" </dev/null 2>/dev/null | grep -q "is now"'
+else
+  echo "  --    sudo wants a password, so unattended.sh was not re-run"
+fi
+
+# askForPassword in com.apple.screensaver is the key this used to be and macOS has
+# ignored it since Sonoma. sysadminctl is the switch now and it wants the account's
+# own password, which nothing can hand it that was not typed in — so on a runner
+# what can be said is where the setting stands.
+screen_lock() {
+  sysadminctl -screenLock status 2>&1
+}
+export -f screen_lock
+
+if screen_lock | grep -q 'screenLock is off'; then
+  check "the screen lock is off" 'screen_lock | grep -q "screenLock is off"'
+else
+  echo "  --    the screen lock is on, and sysadminctl will not turn it off"
+  echo "        without this account's password typed in"
+fi
+
+# The port rather than launchd's opinion of the job: `launchctl enable` clears the
+# Disabled flag without registering the screen recording rights the sharing agent
+# needs, so an enabled-from-a-script Mac has the job loaded and nothing listening.
+if nc -z -G 1 -w 1 127.0.0.1 5900 >/dev/null 2>&1; then
+  check "Screen Sharing answers VNC" 'nc -z -G 1 -w 1 127.0.0.1 5900'
+else
+  echo "  --    nothing answers VNC here, and only System Settings > General >"
+  echo "        Sharing can change that"
+fi
+
+# The Spotlight privacy list, which is the folders mds is told to walk past. Root
+# can read it and nothing can usefully write it, so this names what is still being
+# indexed rather than asserting a state no script could have produced. The paths
+# are repeated rather than sourced, because what is being checked is the list
+# unattended.sh works from.
+exclusions=/System/Volumes/Data/.Spotlight-V100/VolumeConfiguration.plist
+
+if ! sudo -n true 2>/dev/null; then
+  echo "  --    sudo wants a password, so the Spotlight privacy list was not read"
+else
+  excluded="$(sudo -n plutil -extract Exclusions json -o - "$exclusions" 2>/dev/null || true)"
+
+  for folder in "$HOME/projects" "$HOME/.herdr/worktrees" \
+                "$HOME/.claude-dotfiles/.claude/worktrees"; do
+    if printf '%s' "$excluded" | grep -qF "\"$folder\""; then
+      echo "  ok    Spotlight is out of $folder"
+    else
+      echo "  --    Spotlight still indexes $folder, which only System Settings >"
+      echo "        Spotlight > Search Privacy can change"
+    fi
+  done
+fi
+
 # Reading the system domain needs root, and a Mac being provisioned by hand should
 # not have this script sitting on a password prompt.
 if sudo -n true 2>/dev/null; then
