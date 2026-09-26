@@ -71,6 +71,11 @@ for the last step of the install.
 
 EOF
 
+  # The two packages that are not in the Brewfile. Both exist only for the download
+  # below, which happens only where there is a terminal to type an Apple ID at, so
+  # declaring them would install them on every unattended provision for a step it is
+  # never going to run — and would make aria2's absence a failed dependency rather
+  # than a slower download. Installed here, where that has just been decided.
   installed="$(brew list --formula -1)"
 
   # Not required: xcodes finds aria2 on PATH by itself and downloads over 16

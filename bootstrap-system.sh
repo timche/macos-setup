@@ -1,28 +1,23 @@
 #!/bin/bash
 
-# Homebrew, the Xcode command line tools it brings with it, and the packages.
-# Needs sudo the first time only — Homebrew's installer is what wants it, and
-# everything after that lands in a prefix the account owns.
+# Homebrew, the Xcode command line tools it brings with it, and every package the
+# machine has. Needs sudo the first time only — Homebrew's installer is what wants
+# it, and everything after that lands in a prefix the account owns.
 #
-# Every package here is one something later cannot start without: claude.sh
-# clones a private repo with gh and reads the signing key out of 1Password with
-# op, both it and docker.sh patch a config with jq, and mac-mini-dotfiles'
-# install.sh stops with a message if it cannot find brew at all. btop is the one
-# that is only for whoever logs in to look at the machine.
+# The packages are the Brewfile's, including the ones docker.sh and tailscale.sh
+# used to install for themselves: Homebrew is the machine, so one declarative list
+# says what it has and each of those scripts is left to decide about the daemon and
+# the VM. The Brewfile says which two packages stay out of it and why.
 #
-# Safe to re-run: an existing Homebrew is left alone and packages already
-# installed are skipped rather than upgraded, so a re-run is not a way to move
-# versions.
+# Safe to re-run: an existing Homebrew is left alone and --no-upgrade keeps an
+# already-installed package at the version it is on, so a re-run is not a way to
+# move versions.
 
 set -euo pipefail
 
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 homebrew_install=https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh
-
-formulae=(btop gh jq)
-
-# op, and the cask rather than a formula because 1Password ships the CLI itself.
-# It is a zip with a binary in it these days, so nothing here needs sudo for it.
-casks=(1password-cli)
 
 # NONINTERACTIVE because there is nobody to press RETURN, and because it is what
 # keeps the installer on the softwareupdate path for the command line tools: the
@@ -41,22 +36,28 @@ if ! command -v brew >/dev/null 2>&1 && [ -x /opt/homebrew/bin/brew ]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
-# Listed once and compared, rather than leaning on `brew install` being a no-op:
-# it is, but it prints a warning per package that reads like something went
-# wrong.
-installed_formulae="$(brew list --formula -1)"
-installed_casks="$(brew list --cask -1)"
+# --no-upgrade because this Mac is re-run in place and is reached over the sshd and
+# the tailnet a run here touches: `brew upgrade tailscale` restarts the daemon the
+# SSH session is riding on, and nothing about installing a missing package asks for
+# that. `brew bundle upgrade` is the deliberate version of it.
+#
+# Not fatal, which is the same trade docker.sh and tailscale.sh have always made for
+# their own packages: a colima that will not install is no reason to leave the Mac
+# without its hardened sshd. brew bundle names what it could not do.
+if ! brew bundle --no-upgrade --file="$repo/Brewfile"; then
+  echo "some of the Brewfile did not install — rerun $repo/bootstrap-system.sh" >&2
+  echo "once the reason above is fixed." >&2
+fi
 
-for formula in "${formulae[@]}"; do
-  if printf '%s\n' "$installed_formulae" | grep -qxF "$formula"; then
+# The exception to that, and the reason this script runs first: nothing after it
+# does anything at all without these three. The rest of the Brewfile is checked by
+# whichever script wants it.
+for required in gh jq op; do
+  if command -v "$required" >/dev/null 2>&1; then
     continue
   fi
-  brew install "$formula"
-done
 
-for cask in "${casks[@]}"; do
-  if printf '%s\n' "$installed_casks" | grep -qxF "$cask"; then
-    continue
-  fi
-  brew install --cask "$cask"
+  echo "$required is not installed, and nothing after this works without it." >&2
+  echo "Fix the install above and rerun $repo/bootstrap-system.sh." >&2
+  exit 1
 done

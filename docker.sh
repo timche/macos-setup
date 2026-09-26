@@ -38,26 +38,19 @@ fi
 
 # The packages
 
-# docker is the CLI on its own — the daemon is the one inside the VM — and
-# Homebrew packages the two plugins separately from the CLI that loads them.
-formulae=(colima docker docker-compose docker-buildx)
-
-# Listed once and compared rather than leaning on `brew install` being a no-op:
-# it is, but it prints a warning per package that reads like something went
-# wrong. The same reason bootstrap-system.sh does it this way; the packages are
-# here rather than there because this script is the only thing that wants them
-# and, like tailscale.sh, it is the one that knows what to check first.
-installed="$(brew list --formula -1)"
-
-for formula in "${formulae[@]}"; do
-  if printf '%s\n' "$installed" | grep -qxF "$formula"; then
+# The Brewfile's, installed by bootstrap-system.sh: Homebrew is the machine, so one
+# declarative list holds every package and what is left here is the decision this
+# script is the only one that can make — about the VM and the plugin directory.
+# Checked rather than assumed, because everything below is about commands that are
+# no use missing, and reporting that beats a `colima start` that fails obscurely.
+for cli in colima docker; do
+  if command -v "$cli" >/dev/null 2>&1; then
     continue
   fi
 
-  if ! brew install "$formula"; then
-    echo "could not install $formula — rerun $repo/docker.sh to try again" >&2
-    exit 0
-  fi
+  echo "$cli is not installed — it is declared in $repo/Brewfile, which" >&2
+  echo "$repo/bootstrap-system.sh installs; rerun that, then $repo/docker.sh." >&2
+  exit 0
 done
 
 # The plugins

@@ -94,12 +94,14 @@ daemon_label=sh.brew.tailscale
 if sudo launchctl print "system/$daemon_label" >/dev/null 2>&1; then
   echo "tailscaled is already Homebrew's system daemon, left alone"
 else
-  # --formula because the cask of nearly the same name is the standalone app.
+  # The formula is the Brewfile's, installed by bootstrap-system.sh — the cask of
+  # nearly the same name is the standalone app, and an app is a login item inside a
+  # GUI session. Any tailscaled will do here: what this script goes on to make a
+  # system daemon is whatever Homebrew's service runs.
   if ! command -v tailscaled >/dev/null 2>&1; then
-    if ! brew install --formula tailscale; then
-      echo "could not install tailscale — rerun $repo/tailscale.sh to try again" >&2
-      exit 0
-    fi
+    echo "tailscaled is not installed — it is declared in $repo/Brewfile, which" >&2
+    echo "$repo/bootstrap-system.sh installs; rerun that, then $repo/tailscale.sh." >&2
+    exit 0
   fi
 
   # `sudo brew services start`, which Tailscale documents alongside `sudo

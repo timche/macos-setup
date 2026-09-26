@@ -39,7 +39,11 @@ And in the Tailscale admin console: approve the advertised subnet and exit node,
 
 ## The machine
 
-`machine.sh` installs Homebrew and the four packages the rest depends on, turns Remote Login on if it is off, brings tailscale up as a system daemon serving Tailscale SSH, puts docker on the Mac as a colima VM, hardens sshd down to keys only, no root, one user, and — only where there is a terminal to type an Apple ID at — installs Xcode.
+`machine.sh` installs Homebrew and the `Brewfile`'s packages, turns Remote Login on if it is off, brings tailscale up as a system daemon serving Tailscale SSH, puts docker on the Mac as a colima VM, hardens sshd down to keys only, no root, one user, and — only where there is a terminal to type an Apple ID at — installs Xcode.
+
+Every package is in the `Brewfile` at the repo root, applied by `bootstrap-system.sh` with `brew bundle --no-upgrade`. One declarative list, including the three the Claude overlay is the only caller of and the four `docker.sh` used to install for itself: Homebrew is the machine, so `docker.sh` and `tailscale.sh` are left with the decision only they can make — about the VM, the plugin directory and the system daemon — and say what is missing rather than installing it. `--no-upgrade` because this Mac is re-run in place over the very sshd and tailnet a run touches, and `brew upgrade tailscale` restarts the daemon carrying the SSH session; `brew bundle upgrade` is the deliberate version of that. A failed package is not fatal, the same trade `docker.sh` always made — the exception is `gh`, `jq` and `op`, which `bootstrap-system.sh` stops on, since nothing after it works at all without them.
+
+`xcodes` and `aria2` are the two packages the `Brewfile` deliberately leaves out. Both exist only for the Xcode download, which happens only where there is a terminal, so declaring them would install them on every unattended provision for a step it is never going to run — and `aria2` is optional even there, a faster download rather than a dependency. `xcode.sh` installs both itself, once it has decided it is going ahead.
 
 `unattended.sh` is the part that makes several parallel sessions on it possible, and all of it is one idea: nothing on this Mac may stop and wait for a click that nobody is there to make.
 
@@ -86,7 +90,7 @@ macOS 15 and later also put up a "requesting to bypass the system private window
 
 ## Tailscale
 
-`tailscale.sh` installs the open-source `tailscale` formula, starts `tailscaled` as a root system daemon with `sudo brew services start tailscale`, and sets the three prefs this Mac is on the tailnet for: Tailscale SSH, its LAN advertised as a subnet, and itself offered as an exit node.
+`tailscale.sh` starts the open-source `tailscaled` the `Brewfile` installed as a root system daemon with `sudo brew services start tailscale`, and sets the three prefs this Mac is on the tailnet for: Tailscale SSH, its LAN advertised as a subnet, and itself offered as an exit node.
 
 The daemon rather than the standalone app, even though both can serve Tailscale SSH. A system daemon runs before anybody logs in, so a Mac whose auto-login fails or whose GUI session dies is still on the tailnet and still reachable — where the app is a login item inside a session, which is the dependency that already makes docker and the signing agent wait for one. Tailscale call this the less-tested variant on macOS and point unattended installs at it, which is what this Mac is. `sudo brew services start` rather than `sudo tailscaled install-system-daemon`, which Tailscale documents next to it, because the brew service runs Homebrew's own binary: `brew upgrade tailscale` moves the daemon with it, where `install-system-daemon` copies the binary to `/usr/local/bin` and pins the daemon to that copy.
 
@@ -110,7 +114,7 @@ scutil --dns | grep -B2 -A2 100.100.100.100   # the resolver file, as macOS read
 
 ## Docker
 
-`docker.sh` installs colima, the docker CLI and the compose and buildx plugins, writes the shape of a Linux VM into colima's profile config, and hands the starting of that VM to `brew services` so that it comes back with the machine. There is no Docker Desktop here: that is an app, with an installer that expects somebody at the screen and a licence to go with it, where colima is a CLI that starts a VM and gets out of the way.
+`docker.sh` writes the shape of a Linux VM into colima's profile config and hands the starting of that VM to `brew services` so that it comes back with the machine; colima, the docker CLI and the compose and buildx plugins are the `Brewfile`'s. There is no Docker Desktop here: that is an app, with an installer that expects somebody at the screen and a licence to go with it, where colima is a CLI that starts a VM and gets out of the way.
 
 The VM is Virtualization.framework — `vmType: vz` — with Rosetta on, which is what runs an amd64 image at close to native speed. It gets every core but two and a quarter of the memory — the rest is for the parallel sessions running browsers and Electron outside it, since a VM rarely hands memory back — both read from the hardware so that a different Mac needs no edit, and a 100GiB disk, which is a ceiling rather than a reservation because the image is sparse.
 
