@@ -31,8 +31,8 @@ dotfiles="${DOTFILES_DIR:-$HOME/.mac-mini-dotfiles}"
 # is worse than no clone: the installer below would run from it and fail on
 # whatever the old version expected. So the pull is handed gh's helper for that
 # one command. Not `gh auth setup-git`: it writes gh's absolute path into
-# ~/.gitconfig, which by a rerun is a link into mac-mini-dotfiles, shared with a VM
-# that has no /opt/homebrew — git there would stop finding credentials.
+# ~/.gitconfig, which by a rerun is a link into mac-mini-dotfiles — a tracked file,
+# and no machine-specific path belongs in one.
 gh_git() {
   git -c credential.helper= -c 'credential.helper=!gh auth git-credential' "$@"
 }
