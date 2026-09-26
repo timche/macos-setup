@@ -70,10 +70,13 @@ fi
 # NONINTERACTIVE because there is nobody to press RETURN, and because it is what
 # keeps the installer on the softwareupdate path for the command line tools: its
 # fallback is `xcode-select --install`, which puts up a dialog on a machine with
-# no display. sudo still asks for a password, which is the one thing here that
-# wants somebody at the keyboard.
+# no display. The same mode never prompts for sudo, though: it asks with `sudo -n`
+# and gives up with "Insufficient permissions" when no credential is cached, so
+# the password is asked for first, from the terminal rather than from stdin,
+# which under `curl | bash` is the pipe.
 if ! command -v brew >/dev/null 2>&1 && [ ! -x /opt/homebrew/bin/brew ]; then
   echo "Installing Homebrew, and the Xcode command line tools with it."
+  sudo -v </dev/tty
   NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL "$homebrew_install")"
 fi
 
