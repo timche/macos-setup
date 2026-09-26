@@ -51,7 +51,3 @@ fi
 if [ -x "$dotfiles/install.sh" ]; then
   "$dotfiles/install.sh"
 fi
-
-# signing-key.sh is what fetches the key out of 1Password; registering it needs
-# the gh that only exists by this point.
-"$repo/register-signing-key.sh"

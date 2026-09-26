@@ -53,10 +53,10 @@ EOF
     echo "gh login did not finish — rerun $repo/login.sh to try again" >&2
 fi
 
-# install.sh skipped its gh-authenticated half on the way here — the signing key
-# and the private dotfiles. It is idempotent, and this is the pass that picks them
-# up. Only worth it if this run is what logged in; otherwise the earlier pass
-# already had everything it needed.
+# install.sh skipped its gh-authenticated half on the way here — the private
+# dotfiles. It is idempotent, and this is the pass that picks them up. Only worth
+# it if this run is what logged in; otherwise the earlier pass already had
+# everything it needed.
 if [ "$gh_was_authenticated" = false ] && gh auth status >/dev/null 2>&1; then
   echo
   echo "gh is logged in now — rerunning install.sh for the parts that needed it."

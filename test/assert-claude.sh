@@ -39,7 +39,7 @@ check "login.sh exits without a terminal" \
   '"$root/claude/login.sh" < /dev/null'
 check "signing-key.sh exits without a terminal or a stored token" \
   'OP_SERVICE_ACCOUNT_TOKEN_FILE="$(mktemp -u)" "$root/claude/signing-key.sh" < /dev/null'
-check "register-signing-key.sh skips when gh cannot help" \
+check "register-signing-key.sh skips with no agent, no vault and no gh" \
   '"$root/claude/register-signing-key.sh"'
 
 check "the dotfiles were not cloned without a token" \
