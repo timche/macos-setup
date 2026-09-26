@@ -5,10 +5,12 @@
 # signing-key.sh, the real plist and the real wrapper. What it proves is the part
 # that matters — that a commit signs with a key no file on the machine holds.
 #
-# Everything runs against a throwaway HOME, which is why the paths in the plist are
-# rendered rather than left to $HOME: launchd hands a job the account's home
-# directory, so a wrapper that read $HOME would look for the token in the wrong one
-# and this suite could not exist.
+# Everything runs against a throwaway HOME. launchd hands a gui-domain agent the
+# account's home directory rather than this one, which the plist now leaves it to
+# resolve — so ssh-agent.sh installs its links here and deliberately loads nothing,
+# and the wrapper is run the same way launchd runs it, with a HOME of its own.
+# test/agent-links.sh is the other half of this, and covers what launchd does with
+# those links for the account it really belongs to.
 #
 # To add a case, add a check line: a description and a shell snippet that exits
 # non-zero when the expectation is not met.
@@ -34,13 +36,14 @@ check() {
   fi
 }
 
-# launchd keys a job by label per account, so bootstrapping this one on the Mac
-# would bounce the agent holding the real signing key — and it is loaded from a
-# plist naming paths that are about to be deleted.
+# Everything else here lands in the throwaway HOME below, and ssh-agent.sh loads no
+# job for a HOME that is not the account's — but signing-key.sh also calls
+# register-signing-key.sh, and on a Mac with gh logged in that would put a throwaway
+# key on the real GitHub account.
 if [ "${CI:-}" != true ] && [ "${MACOS_SETUP_TEST_ANYWAY:-}" != 1 ]; then
-  echo "signing-agent.sh loads a LaunchAgent labelled $label, which is the same" >&2
-  echo "label the real agent uses — run it on a throwaway machine, or set" >&2
-  echo "MACOS_SETUP_TEST_ANYWAY=1 if you are certain." >&2
+  echo "signing-agent.sh runs the real signing-key.sh, which would register its" >&2
+  echo "throwaway key on whatever GitHub account gh is logged in to — run it on a" >&2
+  echo "throwaway machine, or set MACOS_SETUP_TEST_ANYWAY=1 if you are certain." >&2
   exit 1
 fi
 
@@ -50,6 +53,7 @@ fi
 work="$(mktemp -d /tmp/macos-setup-test.XXXXXX)"
 home="$work/home"
 socket="$home/.ssh/agent.sock"
+agent_log="$home/Library/Logs/ssh-agent.log"
 
 was_loaded=false
 launchctl print "gui/$uid/$label" >/dev/null 2>&1 && was_loaded=true
@@ -123,7 +127,7 @@ if ! HOME="$home" "$root/claude/signing-key.sh"; then
   failures=$((failures + 1))
 fi
 
-export root home socket work label uid
+export root home socket agent_log work label uid
 
 # GitHub and the trust list both keep the type and the body and drop the comment.
 export signer_line="signer@example.com $(awk '{print $1" "$2}' "$work/key.pub")"
@@ -143,37 +147,23 @@ check "no private key was written beside the public half" \
 
 export plist="$home/Library/LaunchAgents/$label.plist"
 
-check "the agent plist was rendered" '[ -f "$plist" ]'
-check "the plist is valid" 'plutil -lint "$plist"'
-check "the plist kept no placeholder" '! grep -q "__" "$plist"'
-check "the plist runs the copy of the wrapper, not the one in the repo" \
-  '[ "$(plutil -extract ProgramArguments.0 raw -o - "$plist")" = "$home/.ssh/agent.sh" ]'
-check "the wrapper is the one in the repo" \
-  'cmp -s "$root/launchd/agent.sh" "$home/.ssh/agent.sh"'
-check "the plist's PATH reaches op" \
-  'plutil -extract EnvironmentVariables.PATH raw -o - "$plist" | grep -q "^$work/bin:"'
-check "the plist names the socket and the token file" \
-  '[ "$(plutil -extract EnvironmentVariables.AGENT_SOCKET raw -o - "$plist")" = "$socket" ] &&
-   [ "$(plutil -extract EnvironmentVariables.OP_SERVICE_ACCOUNT_TOKEN_FILE raw -o - "$plist")" = \
-     "$home/.config/op/service-account-token" ]'
+check "the agent plist is a link to the one in the repo" \
+  '[ "$(readlink "$plist")" = "$root/launchd/$label.plist" ]'
+check "the plist is valid through the link" 'plutil -lint "$plist"'
+check "the wrapper is a link to the one in the repo" \
+  '[ "$(readlink "$home/.ssh/agent.sh")" = "$root/launchd/agent.sh" ]'
+check "the plist leaves every path to the wrapper and \$HOME" \
+  '[ "$(plutil -extract ProgramArguments.2 raw -o - "$plist")" = \
+     "exec \"\$HOME/.ssh/agent.sh\"" ] &&
+   ! plutil -extract EnvironmentVariables raw -o - "$plist" &&
+   ! plutil -extract StandardOutPath raw -o - "$plist"'
 check "launchd restarts the agent whenever it exits" \
   'plutil -extract KeepAlive xml1 -o - "$plist" | grep -q "<true/>"'
 
-# A runner may have no console login and therefore no gui domain to load an agent
-# into, which is the same thing that stops boswell loading over SSH against a Mac
-# at its login window. The wrapper is what is being tested either way, so it is run
-# directly when launchd would not.
-if launchctl print "gui/$uid/$label" >/dev/null 2>&1; then
-  echo "  ok    the agent loaded into gui/$uid"
-else
-  echo "  --    no gui/$uid domain here; running the wrapper directly instead"
-
-  HOME="$home" \
-    AGENT_SOCKET="$socket" \
-    OP_SERVICE_ACCOUNT_TOKEN_FILE="$home/.config/op/service-account-token" \
-    "$home/.ssh/agent.sh" >"$work/agent.log" 2>&1 &
-  wrapper_pid=$!
-fi
+# Run the way launchd runs it, which is with a HOME and nothing else: the socket, the
+# log and the token file are all derived from it, and the stub op is on PATH.
+HOME="$home" "$home/.ssh/agent.sh" &
+wrapper_pid=$!
 
 # The key comes through a network call on a real Mac, so neither path has it the
 # moment the job starts.
@@ -189,6 +179,8 @@ done
 export fingerprint="$(ssh-keygen -lf "$work/key.pub" | awk '{print $2}')"
 
 check "the agent is listening on the socket the dotfiles name" '[ -S "$socket" ]'
+check "the wrapper opened its own log, which the plist no longer names" \
+  '[ -s "$agent_log" ]'
 check "the agent holds the key from 1Password" \
   'SSH_AUTH_SOCK="$socket" ssh-add -l | grep -qF "$fingerprint"'
 
@@ -216,6 +208,6 @@ check "the trust list did not collect a second copy of the key" \
 
 if [ "$failures" -gt 0 ]; then
   echo "  $failures check(s) failed"
-  [ -f "$work/agent.log" ] && sed 's/^/  /' "$work/agent.log"
+  [ -f "$agent_log" ] && sed 's/^/  /' "$agent_log"
   exit 1
 fi

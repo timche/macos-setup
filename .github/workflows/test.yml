@@ -45,6 +45,12 @@ jobs:
       # 1Password. The one thing here that cannot be checked without a vault.
       - run: test/signing-agent.sh
 
+      # The same agent as launchd loads it for the account itself, which is what
+      # proves the two links: a symlinked plist bootstraps, and a wrapper that
+      # changed in the checkout restarts the job. A runner has a gui domain, which
+      # is the one thing this cannot do without.
+      - run: test/agent-links.sh
+
       # machine.sh left the sshd drop-in out for want of a key to log in with, which
       # is the refusal that keeps a Mac nobody can walk up to reachable. Seed a key
       # the way a real one has and it should land. Last, because a runner has

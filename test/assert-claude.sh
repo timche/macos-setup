@@ -45,12 +45,25 @@ check "register-signing-key.sh skips when gh cannot help" \
 check "the dotfiles were not cloned without a token" \
   '[ ! -d "$HOME/.claude-dotfiles" ]'
 
-# Rendered by sed at install time, so a stray character is a file launchd rejects
-# at load with nothing in it to say why.
-check "the agent template is a valid plist" \
-  'plutil -lint "$root/launchd/io.github.timche.ssh-agent.plist"'
+# Symlinked into ~/Library/LaunchAgents rather than rendered, so what is in the repo
+# is what launchd reads: a stray character is a file it rejects at load with nothing
+# in it to say why.
+export agent_plist="$root/launchd/io.github.timche.ssh-agent.plist"
 
-# The wrapper is copied to ~/.ssh and run by launchd, neither of which would say
+check "the agent plist is valid" 'plutil -lint "$agent_plist"'
+
+# The whole of why it can be a link. launchd expands nothing itself, so the one
+# absolute path it needs is a shell's, and $HOME is what that shell expands — while
+# EnvironmentVariables and StandardOutPath, which took rendered paths before, are
+# gone: the wrapper works both out for itself.
+check "the agent plist reaches the wrapper through \$HOME" \
+  '[ "$(plutil -extract ProgramArguments.2 raw -o - "$agent_plist")" = \
+     "exec \"\$HOME/.ssh/agent.sh\"" ]'
+check "the agent plist holds no rendered path" \
+  '! plutil -extract EnvironmentVariables raw -o - "$agent_plist" &&
+   ! plutil -extract StandardOutPath raw -o - "$agent_plist"'
+
+# The wrapper is linked into ~/.ssh and run by launchd, neither of which would say
 # why a syntax error stopped it.
 check "every script parses" \
   'find "$root" -name "*.sh" -not -path "*/.git/*" -exec bash -n {} +'

@@ -1,19 +1,33 @@
 #!/bin/bash
 
 # Install and load the LaunchAgent that keeps the signing key in an ssh-agent of
-# its own. What it runs is launchd/agent.sh, copied out of the repo rather than
-# run from it, so that the checkout stays something that can be moved or deleted.
+# its own. Two symlinks into the checkout rather than two copies, now that the
+# checkout stays on disk for good — a pull is then the whole of an update, and
+# nothing has to be reinstalled to pick one up:
 #
-# Rendered rather than linked: launchd expands neither ~ nor $HOME in a plist, and
-# the PATH it hands a job reaches neither op nor anything else Homebrew installed.
+#   ~/Library/LaunchAgents/io.github.timche.ssh-agent.plist -> launchd/<same name>
+#   ~/.ssh/agent.sh                                         -> launchd/agent.sh
+#
+# launchd accepts a symlinked agent plist — it resolves the link at bootstrap and
+# remembers the file behind it — and it hands a gui-domain agent a HOME, so the
+# plist needs no rendering: a shell in ProgramArguments expands $HOME, and the
+# wrapper derives the socket, the log and the token file from the same one. The
+# second link is what makes that work wherever MACOS_SETUP_DIR put the checkout:
+# ~/.ssh/agent.sh is a fixed path that reaches whatever the checkout's is.
+#
+# launchd reads a plist only at bootstrap, so a plist that changed is a bootout and
+# a fresh bootstrap, while a wrapper that changed is a kickstart. Neither is visible
+# in a link that still points where it did, so the wrapper's hash is kept beside it
+# and compared. Beside the wrapper rather than beside the plist, because
+# ~/Library/LaunchAgents is a directory launchd reads at login and it is for plists.
 #
 # The agent lives in the gui/<uid> domain, which exists only while the account is
 # logged in at the console — so this is the other half of the auto-login
 # unattended.sh checks for, and an SSH session against a Mac sitting at its login
 # window cannot load it at all.
 #
-# Safe to re-run: the plist and the script are compared before anything is
-# replaced, and launchd is only disturbed when one of them changed.
+# Safe to re-run: the links and the hash are compared before anything is replaced,
+# and launchd is only disturbed when one of them changed.
 
 set -euo pipefail
 
@@ -21,14 +35,19 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$repo/.." && pwd)"
 
 label=io.github.timche.ssh-agent
+
+source_plist="$root/launchd/$label.plist"
+source_agent="$root/launchd/agent.sh"
+
 plist="$HOME/Library/LaunchAgents/$label.plist"
 agent="$HOME/.ssh/agent.sh"
+stamp="$HOME/.ssh/agent.sh.sha256"
 log="$HOME/Library/Logs/ssh-agent.log"
 socket="$HOME/.ssh/agent.sock"
 uid="$(id -u)"
 
-# Carried into the plist, because the agent has no environment but the one it is
-# given and these are the two things about it worth overriding.
+# The wrapper's defaults, and the agent gets no others: the plist carries no
+# environment, which is what lets it be a link. A run by hand takes the overrides.
 item="${SIGNING_KEY_OP_ITEM:-op://Claude/SSH Key}"
 token_file="${OP_SERVICE_ACCOUNT_TOKEN_FILE:-$HOME/.config/op/service-account-token}"
 
@@ -38,40 +57,52 @@ if ! command -v op >/dev/null 2>&1; then
   exit 0
 fi
 
-# Wherever Homebrew's prefix is, plus the directories everything else in the
-# wrapper comes from. sudo is not among them: nothing the agent does needs it.
-agent_path="$(cd "$(dirname "$(command -v op)")" && pwd):/usr/bin:/bin:/usr/sbin:/sbin"
+if [ "$item" != "op://Claude/SSH Key" ] ||
+   [ "$token_file" != "$HOME/.config/op/service-account-token" ]; then
+  echo "note: the agent launchd starts reads the default 1Password item and token" >&2
+  echo "file, since its plist carries no environment — change the defaults in" >&2
+  echo "$source_agent if they have to move." >&2
+fi
 
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
 mkdir -p "$HOME/Library/LaunchAgents"
 
-# launchd will not start a job whose log directory is missing.
-mkdir -p "$HOME/Library/Logs"
-
-agent_changed=false
-if ! cmp -s "$root/launchd/agent.sh" "$agent"; then
-  install -m 700 "$root/launchd/agent.sh" "$agent"
-  agent_changed=true
+# A run before the links copied the wrapper here, and a copy left behind is a Mac
+# where the pull that changed the wrapper changed nothing.
+if [ -f "$agent" ] && [ ! -L "$agent" ]; then
+  echo "replacing the copy of agent.sh in ~/.ssh with a link into $root"
 fi
 
-staged="$(mktemp)"
-trap 'rm -f "$staged"' EXIT
+plist_relinked=false
+if [ "$(readlink "$plist" || true)" != "$source_plist" ]; then
+  rm -f "$plist"
+  ln -s "$source_plist" "$plist"
+  plist_relinked=true
+fi
 
-# | rather than / as the delimiter: every value substituted here is a path or a
-# secret reference, and all of them have slashes in.
-sed -e "s|__AGENT__|$agent|" \
-    -e "s|__LOG__|$log|" \
-    -e "s|__PATH__|$agent_path|" \
-    -e "s|__SOCKET__|$socket|" \
-    -e "s|__TOKEN_FILE__|$token_file|" \
-    -e "s|__OP_ITEM__|$item|" \
-    "$root/launchd/$label.plist" >"$staged"
+if [ "$(readlink "$agent" || true)" != "$source_agent" ]; then
+  rm -f "$agent"
+  ln -s "$source_agent" "$agent"
+fi
 
-plist_changed=false
-if ! cmp -s "$staged" "$plist"; then
-  install -m 644 "$staged" "$plist"
-  plist_changed=true
+agent_hash="$(shasum -a 256 "$source_agent" | awk '{print $1}')"
+
+stamped=none
+if [ -f "$stamp" ]; then
+  stamped="$(cat "$stamp")"
+fi
+
+# launchd would hand the job the account's home directory and the plist names
+# $HOME, so a run against any other one can install the links but never load
+# something that reads them. test/signing-agent.sh is the caller that hits this.
+account_home="$(dscl . -read "/Users/$(id -un)" NFSHomeDirectory 2>/dev/null |
+  sed -n 's/^NFSHomeDirectory: //p')"
+
+if [ -n "$account_home" ] && [ "$HOME" != "$account_home" ]; then
+  echo "installed the links under $HOME and left launchd alone: the plist names"
+  echo "\$HOME, and the one launchd would hand the job is $account_home."
+  exit 0
 fi
 
 loaded=false
@@ -81,8 +112,9 @@ fi
 
 # launchd holds the plist it read at bootstrap, and kickstart restarts the process
 # from that copy — so a changed plist is a bootout and a fresh bootstrap or it is
-# nothing at all.
-if [ "$loaded" = true ] && [ "$plist_changed" = true ]; then
+# nothing at all. A link that now points somewhere else counts as changed, since
+# what launchd remembers is the file it resolved to.
+if [ "$loaded" = true ] && [ "$plist_relinked" = true ]; then
   launchctl bootout "gui/$uid/$label" || true
   loaded=false
 fi
@@ -97,11 +129,24 @@ if [ "$loaded" = false ]; then
     echo "  $repo/ssh-agent.sh" >&2
     exit 0
   fi
-elif [ "$agent_changed" = true ]; then
+elif [ "$agent_hash" != "$stamped" ]; then
   launchctl kickstart -k "gui/$uid/$label"
   echo "restarted $label, which is what re-reads the key"
 else
   echo "$label is already loaded"
+fi
+
+# Written only once the job is running the wrapper this hash is of, so a bootstrap
+# that failed leaves the next run to try again rather than to skip the restart.
+printf '%s\n' "$agent_hash" >"$stamp"
+chmod 600 "$stamp"
+
+# Nothing for the agent to load yet, and it keeps trying — so there is no point
+# waiting on a key that cannot arrive until signing-key.sh has stored a token.
+if [ ! -f "$token_file" ]; then
+  echo "no service-account token in $token_file yet, so the agent is up and"
+  echo "empty. It picks the key up on its own once there is one."
+  exit 0
 fi
 
 # The key comes out of 1Password over the network, so there is nothing to see for

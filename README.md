@@ -19,7 +19,7 @@ git -C ~/.macos-setup pull
 ~/.macos-setup/claude.sh
 ```
 
-`MACOS_SETUP_DIR` puts it somewhere else. An earlier run left it at `~/macos-setup`, and `bootstrap.sh` moves that rather than cloning a second copy.
+`MACOS_SETUP_DIR` puts it somewhere else. It is not a clone to delete, either: the LaunchAgent that holds the signing key runs `launchd/agent.sh` out of it through a symlink, so moving the checkout means re-running `claude.sh` to point the links at the new place. An earlier run left it at `~/macos-setup`, and `bootstrap.sh` moves that rather than cloning a second copy.
 
 Both halves are safe to re-run, and both are careful about what is already there. That is the difference from provisioning a VM: this Mac was reachable over SSH and on the tailnet before the repo existed, because that is how the repo got onto it, and a second tailscale or a rewritten sshd would be a step backwards rather than a fresh start.
 

@@ -7,10 +7,11 @@
 # match — so this process is what makes a commit signable, and losing it costs
 # nothing but a re-read.
 #
-# Installed as a copy by claude/ssh-agent.sh and run by launchd, which restarts it
-# whenever it exits; that is the whole recovery story, since a restart re-reads the
-# key. It waits on the agent rather than backgrounding it for the same reason: a
-# job that exits would leave launchd thinking the pair had finished.
+# Run by launchd out of the checkout — ~/.ssh/agent.sh is a symlink to this file,
+# installed by claude/ssh-agent.sh — and restarted whenever it exits; that is the
+# whole recovery story, since a restart re-reads the key. It waits on the agent
+# rather than backgrounding it for the same reason: a job that exits would leave
+# launchd thinking the pair had finished.
 #
 # The socket path is fixed rather than the one ssh-agent would print, because
 # launchd hands every login session an SSH_AUTH_SOCK of its own pointing at the
@@ -19,17 +20,34 @@
 # than SSH_AUTH_SOCK so that a hand-run never rm's the socket of the agent macOS
 # had already put in the environment.
 #
-# Run it by hand to see what it would do; it logs a line per step to stdout, which
-# launchd sends to ~/Library/Logs/ssh-agent.log.
+# Run it by hand to see what it would do; it logs a line per step, to the terminal
+# when there is one and to ~/Library/Logs/ssh-agent.log when launchd is the caller.
 
 set -uo pipefail
 
-# Every path here is rendered into the plist by the installer, because launchd
-# expands nothing and the HOME it hands a job is the account's rather than the one
-# that installed it. The fallbacks are for running this by hand.
+# Every path here comes from $HOME, which is what keeps the plist a static file with
+# nothing to render: launchd expands nothing itself, but it does hand a gui-domain
+# agent the account's home directory. The overrides are for a run by hand — the
+# plist carries no environment, so they never reach the job launchd starts.
 sock="${AGENT_SOCKET:-$HOME/.ssh/agent.sock}"
 token_file="${OP_SERVICE_ACCOUNT_TOKEN_FILE:-$HOME/.config/op/service-account-token}"
 item="${SIGNING_KEY_OP_ITEM:-op://Claude/SSH Key}"
+log="$HOME/Library/Logs/ssh-agent.log"
+
+# launchd hands a job /usr/bin:/bin:/usr/sbin:/sbin and nothing else, and op is
+# Homebrew's. /opt/homebrew because this is Apple Silicon only, refused up front.
+# Appended rather than prepended: launchd's PATH holds nothing this shadows, and a
+# PATH that already reaches op has an order somebody chose.
+PATH="$PATH:/opt/homebrew/bin:/opt/homebrew/sbin"
+export PATH
+
+# StandardOutPath would be the obvious place for this, but it takes an absolute path
+# and launchd will not expand a $HOME in one — a plist that tried would be an
+# EX_CONFIG failure at load. Opened here instead, and only when nobody is watching.
+if [ ! -t 1 ]; then
+  mkdir -p "$(dirname "$log")"
+  exec >>"$log" 2>&1
+fi
 
 # launchd stamps nothing, and every line here is read long after the fact.
 say() {
