@@ -9,17 +9,17 @@ curl -fsSL https://raw.githubusercontent.com/timche/macos-setup/main/bootstrap.s
 curl -fsSL https://raw.githubusercontent.com/timche/macos-setup/main/bootstrap.sh | bash -s claude  # the same, plus Claude Code
 ```
 
-A fresh Mac has no git and no package manager, so there is nothing to clone this with — which is what `bootstrap.sh` is for. It installs Homebrew, which installs the Xcode command line tools on the way through `softwareupdate` rather than the dialog nobody is in front of, clones this repo to `~/macos-setup` and runs `machine.sh` as the account you are logged in as. The second form runs `claude.sh` on top, and that is the whole of the difference.
+A fresh Mac has no git and no package manager, so there is nothing to clone this with — which is what `bootstrap.sh` is for. It installs Homebrew, which installs the Xcode command line tools on the way through `softwareupdate` rather than the dialog nobody is in front of, clones this repo to `~/.macos-setup` and runs `machine.sh` as the account you are logged in as. The second form runs `claude.sh` on top, and that is the whole of the difference.
 
-The clone stays, unlike `debian-setup`'s, because a Mac is a machine you pull and re-run rather than one you reprovision from a URL:
+The clone stays, unlike `debian-setup`'s, because a Mac is a machine you pull and re-run rather than one you reprovision from a URL — hidden for the same reason `~/.claude-dotfiles` is, since it is machinery rather than work:
 
 ```sh
-git -C ~/macos-setup pull
-~/macos-setup/machine.sh
-~/macos-setup/claude.sh
+git -C ~/.macos-setup pull
+~/.macos-setup/machine.sh
+~/.macos-setup/claude.sh
 ```
 
-Nothing installed from it points back into it, so it can be moved or deleted; `MACOS_SETUP_DIR` puts it somewhere else.
+`MACOS_SETUP_DIR` puts it somewhere else. An earlier run left it at `~/macos-setup`, and `bootstrap.sh` moves that rather than cloning a second copy.
 
 Both halves are safe to re-run, and both are careful about what is already there. That is the difference from provisioning a VM: this Mac was reachable over SSH and on the tailnet before the repo existed, because that is how the repo got onto it, and a second tailscale or a rewritten sshd would be a step backwards rather than a fresh start.
 
@@ -135,7 +135,7 @@ To resize it, edit `~/.colima/default/colima.yaml` and restart — `colima stop 
 `xcode.sh` installs the full Xcode, which this Mac needs for signing builds of meru with a Developer ID certificate — the command line tools Homebrew brought are enough to compile but not the whole toolchain electron-builder reaches for. It is the one step of the machine `machine.sh` will not do unattended: Apple hands nobody an Xcode without an Apple ID, a 2FA code typed in while it is still valid, and the account password for the privileged end of the install. `machine.sh` runs it when there is a terminal and lists it under what is left when there is not.
 
 ```sh
-~/macos-setup/xcode.sh
+~/.macos-setup/xcode.sh
 ```
 
 It stops before downloading anything if `/` has less than 40GB free, since the xip is around 11GB and unpacks to more than twice that before the copy into `/Applications`. The download comes through [`xcodes`](https://github.com/XcodesOrg/xcodes) — `--latest`, so a release and never a beta — and then the script selects what it installed, accepts the licence and runs the first launch, each one guarded so that a re-run asks for nothing.
@@ -167,7 +167,9 @@ What it expects:
 - A 1Password item with the key in it, at `op://Claude/SSH Key`, whose `private key` and `public key` fields are the two halves. `SIGNING_KEY_OP_ITEM` names a different one.
 - A 1Password service account with read access to that vault. `claude/signing-key.sh` asks for its token once, without echoing it, checks it can read the item, and stores it in `~/.config/op/service-account-token` for the agent to read at every start.
 
-The agent is a LaunchAgent, `io.github.timche.ssh-agent`, running `~/.ssh/agent.sh`: it starts an `ssh-agent` on a fixed socket at `~/.ssh/agent.sock`, loads the key into it, and then waits on it, so that launchd restarting the pair is also what re-reads the key. The socket is fixed because the one launchd hands out belongs to the agent macOS starts for each session, which holds nothing of this and is not visible to an SSH login at all — `claude-dotfiles`' `.zshenv` and its own LaunchAgents name `~/.ssh/agent.sock` instead. At boot the key cannot be read until the network is up, so the agent comes up empty and keeps trying with a widening delay.
+The agent is a LaunchAgent, `io.github.timche.ssh-agent`, running `~/.ssh/agent.sh`, which is a symlink to `launchd/agent.sh` in the checkout: it starts an `ssh-agent` on a fixed socket at `~/.ssh/agent.sock`, loads the key into it, and then waits on it, so that launchd restarting the pair is also what re-reads the key. The socket is fixed because the one launchd hands out belongs to the agent macOS starts for each session, which holds nothing of this and is not visible to an SSH login at all — `claude-dotfiles`' `.zshenv` and its own LaunchAgents name `~/.ssh/agent.sock` instead. At boot the key cannot be read until the network is up, so the agent comes up empty and keeps trying with a widening delay.
+
+Both halves of it are links into the checkout rather than copies, so a pull is all a change to either needs — `~/Library/LaunchAgents/io.github.timche.ssh-agent.plist` points at the plist in `launchd/` and `~/.ssh/agent.sh` at the wrapper beside it. launchd accepts a symlinked agent plist and hands the job `HOME`, so that plist holds no absolute path at all: `/bin/sh -c 'exec "$HOME/.ssh/agent.sh"'` is what expands one, and the wrapper derives the socket, the log and the token file from `$HOME` itself. It reads a plist only when the job is bootstrapped, though, so `claude/ssh-agent.sh` still boots the job out and back in when the plist changed, and restarts it with `launchctl kickstart -k` when only the wrapper did — which it knows from a hash of the wrapper kept in `~/.ssh/agent.sh.sha256`.
 
 To see where it is:
 

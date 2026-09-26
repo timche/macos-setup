@@ -87,11 +87,20 @@ fi
 
 # The repo
 
-# At the top of $HOME, beside claude-dotfiles and the docs: this is the machine
-# rather than work done on it. Nothing installed from here points back into the
-# clone, so it can be moved or deleted; it is kept because a Mac is pulled and
-# re-run rather than reprovisioned from a URL. MACOS_SETUP_DIR moves it.
-target="${MACOS_SETUP_DIR:-$HOME/macos-setup}"
+# Hidden, like claude-dotfiles beside it, because it is machinery rather than work:
+# $HOME holds what is worked on, and this is what makes the machine. It stays for
+# good — a Mac is pulled and re-run rather than reprovisioned from a URL, and the
+# LaunchAgent the Claude half installs is a link into it. MACOS_SETUP_DIR moves it.
+target="${MACOS_SETUP_DIR:-$HOME/.macos-setup}"
+
+# An earlier run cloned to ~/macos-setup. Moved rather than recloned, because two
+# clones is a Mac where a pull updates one of them and the agent runs the other.
+previous="$HOME/macos-setup"
+
+if [ -d "$previous/.git" ] && [ ! -e "$target" ]; then
+  echo "Moving the clone from $previous to $target."
+  mv "$previous" "$target"
+fi
 
 if [ -d "$target/.git" ]; then
   git -C "$target" pull --ff-only
