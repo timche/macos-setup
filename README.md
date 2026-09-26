@@ -166,7 +166,7 @@ The one file derived from the key is `~/.ssh/allowed_signers`, a principal and a
 
 What it expects:
 
-- A 1Password item with the key in it, at `op://Claude/SSH Key`, whose `private key` and `public key` fields are the two halves. `SIGNING_KEY_OP_ITEM` names a different one.
+- A 1Password item with the key in it, at `op://Mac Mini/SSH Key`, whose `private key` and `public key` fields are the two halves. `SIGNING_KEY_OP_ITEM` names a different one.
 - A 1Password service account with read access to that vault. `claude/signing-key.sh` asks for its token once, without echoing it, checks it can read the item, and stores it in `~/.config/op/service-account-token` for the agent to read at every start.
 
 The agent is a LaunchAgent, `io.github.timche.ssh-agent`, running `~/.ssh/agent.sh`, which is a symlink to `launchd/agent.sh` in the checkout: it starts an `ssh-agent` on a fixed socket at `~/.ssh/agent.sock`, loads the key into it, and then waits on it, so that launchd restarting the pair is also what re-reads the key. The socket is fixed because the one launchd hands out belongs to the agent macOS starts for each session, which holds nothing of this and is not visible to an SSH login at all — `mac-mini-dotfiles`' `.zshenv` and its own LaunchAgents name `~/.ssh/agent.sock` instead. At boot the key cannot be read until the network is up, so the agent comes up empty and keeps trying with a widening delay.
