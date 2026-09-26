@@ -1,25 +1,25 @@
-# macOS Setup
+# Mac mini Setup
 
-[![test](https://github.com/timche/macos-setup/actions/workflows/test.yml/badge.svg)](https://github.com/timche/macos-setup/actions/workflows/test.yml)
+[![test](https://github.com/timche/mac-mini-setup/actions/workflows/test.yml/badge.svg)](https://github.com/timche/mac-mini-setup/actions/workflows/test.yml)
 
 Provisioning for a headless Apple Silicon Mac, and optionally for the one that runs Claude Code. As the account the machine is for, which unlike a VM's already exists:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/timche/macos-setup/main/bootstrap.sh | bash            # a plain Mac
-curl -fsSL https://raw.githubusercontent.com/timche/macos-setup/main/bootstrap.sh | bash -s claude  # the same, plus Claude Code
+curl -fsSL https://raw.githubusercontent.com/timche/mac-mini-setup/main/bootstrap.sh | bash            # a plain Mac
+curl -fsSL https://raw.githubusercontent.com/timche/mac-mini-setup/main/bootstrap.sh | bash -s claude  # the same, plus Claude Code
 ```
 
-A fresh Mac has no git and no package manager, so there is nothing to clone this with — which is what `bootstrap.sh` is for. It installs Homebrew, which installs the Xcode command line tools on the way through `softwareupdate` rather than the dialog nobody is in front of, clones this repo to `~/.macos-setup` and runs `machine.sh` as the account you are logged in as. The second form runs `claude.sh` on top, and that is the whole of the difference.
+A fresh Mac has no git and no package manager, so there is nothing to clone this with — which is what `bootstrap.sh` is for. It installs Homebrew, which installs the Xcode command line tools on the way through `softwareupdate` rather than the dialog nobody is in front of, clones this repo to `~/.mac-mini-setup` and runs `machine.sh` as the account you are logged in as. The second form runs `claude.sh` on top, and that is the whole of the difference.
 
 The clone stays, unlike `debian-setup`'s, because a Mac is a machine you pull and re-run rather than one you reprovision from a URL — hidden for the same reason `~/.mac-mini-dotfiles` is, since it is machinery rather than work:
 
 ```sh
-git -C ~/.macos-setup pull
-~/.macos-setup/machine.sh
-~/.macos-setup/claude.sh
+git -C ~/.mac-mini-setup pull
+~/.mac-mini-setup/machine.sh
+~/.mac-mini-setup/claude.sh
 ```
 
-`MACOS_SETUP_DIR` puts it somewhere else. It is not a clone to delete, either: the LaunchAgent that holds the signing key runs `launchd/agent.sh` out of it through a symlink, so moving the checkout means re-running `claude.sh` to point the links at the new place.
+`MAC_MINI_SETUP_DIR` puts it somewhere else. It is not a clone to delete, either: the LaunchAgent that holds the signing key runs `launchd/agent.sh` out of it through a symlink, so moving the checkout means re-running `claude.sh` to point the links at the new place.
 
 Both halves are safe to re-run, and both are careful about what is already there. That is the difference from provisioning a VM: a VM is thrown away and built again, while this Mac is re-run in place and is reached over the sshd and the tailnet the run itself configures, so a rewritten sshd or a bounced tailscaled would cut the run off from the machine it is running on.
 
@@ -135,7 +135,7 @@ To resize it, edit `~/.colima/default/colima.yaml` and restart — `colima stop 
 `xcode.sh` installs the full Xcode, which this Mac needs for signing builds of meru with a Developer ID certificate — the command line tools Homebrew brought are enough to compile but not the whole toolchain electron-builder reaches for. It is the one step of the machine `machine.sh` will not do unattended: Apple hands nobody an Xcode without an Apple ID, a 2FA code typed in while it is still valid, and the account password for the privileged end of the install. `machine.sh` runs it when there is a terminal and lists it under what is left when there is not.
 
 ```sh
-~/.macos-setup/xcode.sh
+~/.mac-mini-setup/xcode.sh
 ```
 
 It stops before downloading anything if `/` has less than 40GB free, since the xip is around 11GB and unpacks to more than twice that before the copy into `/Applications`. The download comes through [`xcodes`](https://github.com/XcodesOrg/xcodes) — `--latest`, so a release and never a beta — and then the script selects what it installed, accepts the licence and runs the first launch, each one guarded so that a re-run asks for nothing.
@@ -192,6 +192,6 @@ macOS reads `sshd_config` per connection — launchd holds port 22 and spawns an
 
 ## Environment knobs
 
-`MACOS_SETUP_REPO`, `MACOS_SETUP_DIR`, `DOTFILES_REPO`, `DOTFILES_DIR`, `SIGNING_KEY_OP_ITEM`, `OP_SERVICE_ACCOUNT_TOKEN_FILE`, `FORCE_HARDEN`, `TS_ADVERTISE_ROUTES`.
+`MAC_MINI_SETUP_REPO`, `MAC_MINI_SETUP_DIR`, `DOTFILES_REPO`, `DOTFILES_DIR`, `SIGNING_KEY_OP_ITEM`, `OP_SERVICE_ACCOUNT_TOKEN_FILE`, `FORCE_HARDEN`, `TS_ADVERTISE_ROUTES`.
 
 `CLAUDE.md` has the details: the order the scripts run in, the constraints that are not obvious from reading them, and how to test.

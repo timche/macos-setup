@@ -39,13 +39,13 @@ check "no hardcoded home directory in the scripts" \
   '! grep -rhoE --include="*.sh" --include="*.plist" "/Users/[A-Za-z0-9_.-]+" "$root" |
      grep -q .'
 
-# The clone is ~/.macos-setup, hidden because it is machinery rather than work, and
+# The clone is ~/.mac-mini-setup, hidden because it is machinery rather than work, and
 # the LaunchAgent the Claude half installs is a link into it — so where it lands is
 # also where launchd reads the agent from. bootstrap.sh is the only thing that
 # decides that, and a runner's clone is the workspace, so the default is what there
 # is to assert here.
 check "the clone defaults to the hidden path" \
-  'grep -q "MACOS_SETUP_DIR:-\$HOME/\.macos-setup" "$root/bootstrap.sh"'
+  'grep -q "MAC_MINI_SETUP_DIR:-\$HOME/\.mac-mini-setup" "$root/bootstrap.sh"'
 
 # Homebrew and its packages, which is all the machine half installs.
 check "brew is the Apple Silicon prefix" '[ -x /opt/homebrew/bin/brew ]'

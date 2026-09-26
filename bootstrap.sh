@@ -3,8 +3,8 @@
 # The first command a Mac has, and the only one that works before this repo is
 # on it:
 #
-#   curl -fsSL https://raw.githubusercontent.com/timche/macos-setup/main/bootstrap.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/timche/macos-setup/main/bootstrap.sh | bash -s claude
+#   curl -fsSL https://raw.githubusercontent.com/timche/mac-mini-setup/main/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/timche/mac-mini-setup/main/bootstrap.sh | bash -s claude
 #
 # A fresh Mac has no git — it comes with the Xcode command line tools — and no
 # package manager at all, so there is nothing here to clone with. Homebrew's own
@@ -23,7 +23,7 @@
 
 set -euo pipefail
 
-repo_url="${MACOS_SETUP_REPO:-https://github.com/timche/macos-setup.git}"
+repo_url="${MAC_MINI_SETUP_REPO:-https://github.com/timche/mac-mini-setup.git}"
 homebrew_install=https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh
 
 # The overlay is opt-in, and the argument is the whole of the interface to it.
@@ -43,7 +43,7 @@ if [ "$#" -gt 0 ]; then
 fi
 
 if [ "$(uname -s)" != Darwin ]; then
-  echo "macos-setup is for a Mac; this is $(uname -s)." >&2
+  echo "mac-mini-setup is for a Mac; this is $(uname -s)." >&2
   exit 1
 fi
 
@@ -51,7 +51,7 @@ fi
 # PATH and into the agents launchd loads. An Intel Mac puts Homebrew in
 # /usr/local and would come out of this half working with nothing saying why.
 if [ "$(uname -m)" != arm64 ]; then
-  echo "macos-setup is for an Apple Silicon Mac; this is $(uname -m), where" >&2
+  echo "mac-mini-setup is for an Apple Silicon Mac; this is $(uname -m), where" >&2
   echo "Homebrew lives in /usr/local rather than the /opt/homebrew everything" >&2
   echo "here and in mac-mini-dotfiles expects." >&2
   exit 1
@@ -93,8 +93,8 @@ fi
 # Hidden, like mac-mini-dotfiles beside it, because it is machinery rather than work:
 # $HOME holds what is worked on, and this is what makes the machine. It stays for
 # good — a Mac is pulled and re-run rather than reprovisioned from a URL, and the
-# LaunchAgent the Claude half installs is a link into it. MACOS_SETUP_DIR moves it.
-target="${MACOS_SETUP_DIR:-$HOME/.macos-setup}"
+# LaunchAgent the Claude half installs is a link into it. MAC_MINI_SETUP_DIR moves it.
+target="${MAC_MINI_SETUP_DIR:-$HOME/.mac-mini-setup}"
 
 if [ -d "$target/.git" ]; then
   git -C "$target" pull --ff-only
