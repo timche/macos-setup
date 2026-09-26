@@ -47,13 +47,13 @@ if [ "$(uname -s)" != Darwin ]; then
   exit 1
 fi
 
-# /opt/homebrew is the Apple Silicon prefix, and it is written into claude-dotfiles'
+# /opt/homebrew is the Apple Silicon prefix, and it is written into mac-mini-dotfiles'
 # PATH and into the agents launchd loads. An Intel Mac puts Homebrew in
 # /usr/local and would come out of this half working with nothing saying why.
 if [ "$(uname -m)" != arm64 ]; then
   echo "macos-setup is for an Apple Silicon Mac; this is $(uname -m), where" >&2
   echo "Homebrew lives in /usr/local rather than the /opt/homebrew everything" >&2
-  echo "here and in claude-dotfiles expects." >&2
+  echo "here and in mac-mini-dotfiles expects." >&2
   exit 1
 fi
 
@@ -78,7 +78,7 @@ if ! command -v brew >/dev/null 2>&1 && [ ! -x /opt/homebrew/bin/brew ]; then
 fi
 
 # The installer puts nothing on PATH — that is what it prints instructions for —
-# and the shell that would read them is claude-dotfiles' business rather than this
+# and the shell that would read them is mac-mini-dotfiles' business rather than this
 # script's. Skipped when brew is already reachable: a PATH that reaches it has an
 # order somebody chose, and prepending the prefix again steps over it.
 if ! command -v brew >/dev/null 2>&1 && [ -x /opt/homebrew/bin/brew ]; then
@@ -87,7 +87,7 @@ fi
 
 # The repo
 
-# Hidden, like claude-dotfiles beside it, because it is machinery rather than work:
+# Hidden, like mac-mini-dotfiles beside it, because it is machinery rather than work:
 # $HOME holds what is worked on, and this is what makes the machine. It stays for
 # good — a Mac is pulled and re-run rather than reprovisioned from a URL, and the
 # LaunchAgent the Claude half installs is a link into it. MACOS_SETUP_DIR moves it.

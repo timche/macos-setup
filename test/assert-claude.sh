@@ -43,7 +43,7 @@ check "register-signing-key.sh skips when gh cannot help" \
   '"$root/claude/register-signing-key.sh"'
 
 check "the dotfiles were not cloned without a token" \
-  '[ ! -d "$HOME/.claude-dotfiles" ]'
+  '[ ! -d "$HOME/.mac-mini-dotfiles" ]'
 
 # Symlinked into ~/Library/LaunchAgents rather than rendered, so what is in the repo
 # is what launchd reads: a stray character is a file it rejects at load with nothing

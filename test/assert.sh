@@ -199,7 +199,7 @@ else
 fi
 
 # Nothing in the generic half has an opinion about the shell or the dotfiles: both
-# are claude-dotfiles', which installs them as symlinks out of its own checkout.
+# are mac-mini-dotfiles', which installs them as symlinks out of its own checkout.
 # A runner may well arrive with rc files of its own, so the link is the assertion
 # rather than the file.
 check "no rc file was linked" '[ ! -L "$HOME/.zshrc" ] && [ ! -L "$HOME/.gitconfig" ]'
@@ -318,7 +318,7 @@ else
   excluded="$(sudo -n plutil -extract Exclusions json -o - "$exclusions" 2>/dev/null || true)"
 
   for folder in "$HOME/projects" "$HOME/.herdr/worktrees" \
-                "$HOME/.claude-dotfiles/.claude/worktrees"; do
+                "$HOME/.mac-mini-dotfiles/.claude/worktrees"; do
     if printf '%s' "$excluded" | grep -qF "\"$folder\""; then
       echo "  ok    Spotlight is out of $folder"
     else

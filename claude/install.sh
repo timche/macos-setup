@@ -2,7 +2,7 @@
 
 # Fetch the private half and let it take over. Everything personal — the shell,
 # the prompt, the runtimes, the Claude Code configuration — lives in
-# claude-dotfiles, so all this script does is get it onto the machine and run its
+# mac-mini-dotfiles, so all this script does is get it onto the machine and run its
 # installer.
 #
 # That needs an authenticated gh, which a fresh Mac does not have when claude.sh
@@ -23,15 +23,15 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 
 # Hidden, because it is machinery rather than work: $HOME holds what is worked
-# on, and this is what makes the account itself. CLAUDE_DOTFILES_DIR moves it.
-dotfiles="${CLAUDE_DOTFILES_DIR:-$HOME/.claude-dotfiles}"
+# on, and this is what makes the account itself. DOTFILES_DIR moves it.
+dotfiles="${DOTFILES_DIR:-$HOME/.mac-mini-dotfiles}"
 
 # gh clones a private repo by injecting the token itself, but the git that pulls
 # it afterwards has no idea where to find one, and a clone that cannot be updated
 # is worse than no clone: the installer below would run from it and fail on
 # whatever the old version expected. So the pull is handed gh's helper for that
 # one command. Not `gh auth setup-git`: it writes gh's absolute path into
-# ~/.gitconfig, which by a rerun is a link into claude-dotfiles, shared with a VM
+# ~/.gitconfig, which by a rerun is a link into mac-mini-dotfiles, shared with a VM
 # that has no /opt/homebrew — git there would stop finding credentials.
 gh_git() {
   git -c credential.helper= -c 'credential.helper=!gh auth git-credential' "$@"
@@ -44,7 +44,7 @@ if [ -d "$dotfiles/.git" ]; then
     echo "could not update $dotfiles — the installer below runs from it as it" \
          "is, which is a version behind whatever it should be" >&2
 else
-  gh repo clone "${CLAUDE_DOTFILES_REPO:-timche/claude-dotfiles}" "$dotfiles" ||
+  gh repo clone "${DOTFILES_REPO:-timche/mac-mini-dotfiles}" "$dotfiles" ||
     echo "could not clone the dotfiles repo — the shell stays as macOS left it" >&2
 fi
 

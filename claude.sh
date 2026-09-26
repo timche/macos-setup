@@ -10,7 +10,7 @@
 #
 # It installs nothing: every package either half needs is brew's, and brew is the
 # machine's. What is here is accounts and keys — and the handover to
-# claude-dotfiles, which is the private half that brings the shell, the runtimes
+# mac-mini-dotfiles, which is the private half that brings the shell, the runtimes
 # and Claude Code itself.
 #
 # Safe to re-run: logins already in place are left alone, and the dotfiles clone
@@ -32,7 +32,7 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 # claude.sh is run from a plain SSH session as often as from bootstrap.sh, and
-# nothing puts Homebrew on a PATH until claude-dotfiles' own .zshenv exists.
+# nothing puts Homebrew on a PATH until mac-mini-dotfiles' own .zshenv exists.
 if ! command -v brew >/dev/null 2>&1 && [ -x /opt/homebrew/bin/brew ]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi

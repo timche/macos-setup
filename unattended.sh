@@ -325,11 +325,11 @@ exclusions=/System/Volumes/Data/.Spotlight-V100/VolumeConfiguration.plist
 # ~/projects covers Claude Code's worktrees, which it keeps in
 # <repo>/.claude/worktrees inside the checkout they belong to. The two outside it
 # are herdr's, which collects them per machine rather than per repo, and
-# ~/.claude-dotfiles, a checkout like any other but hidden because it is what
+# ~/.mac-mini-dotfiles, a checkout like any other but hidden because it is what
 # makes the account rather than work done in it.
 spotlight_folders="$HOME/projects
 $HOME/.herdr/worktrees
-$HOME/.claude-dotfiles/.claude/worktrees"
+$HOME/.mac-mini-dotfiles/.claude/worktrees"
 
 if ! sudo -n true 2>/dev/null; then
   echo "sudo wants a password, so the Spotlight privacy list was not read"

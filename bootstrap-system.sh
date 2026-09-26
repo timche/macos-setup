@@ -6,7 +6,7 @@
 #
 # Every package here is one something later cannot start without: claude.sh
 # clones a private repo with gh and reads the signing key out of 1Password with
-# op, both it and docker.sh patch a config with jq, and claude-dotfiles'
+# op, both it and docker.sh patch a config with jq, and mac-mini-dotfiles'
 # install.sh stops with a message if it cannot find brew at all. btop is the one
 # that is only for whoever logs in to look at the machine.
 #
@@ -34,7 +34,7 @@ if ! command -v brew >/dev/null 2>&1 && [ ! -x /opt/homebrew/bin/brew ]; then
 fi
 
 # The installer only prints the line that would do this, and the shell that reads
-# that line is claude-dotfiles'. Skipped when brew is already reachable: a PATH that
+# that line is mac-mini-dotfiles'. Skipped when brew is already reachable: a PATH that
 # reaches it has an order somebody chose, and prepending the prefix again steps over
 # it.
 if ! command -v brew >/dev/null 2>&1 && [ -x /opt/homebrew/bin/brew ]; then

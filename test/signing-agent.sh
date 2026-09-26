@@ -111,7 +111,7 @@ install -d -m 700 "$home/.config/op"
 printf 'ops_stub_token' >"$home/.config/op/service-account-token"
 chmod 600 "$home/.config/op/service-account-token"
 
-# What claude-dotfiles' .gitconfig carries on the real machine: the signing key is
+# What mac-mini-dotfiles' .gitconfig carries on the real machine: the signing key is
 # named by its public half alone, and the principal in allowed_signers has to be
 # the address the commits are authored under.
 HOME="$home" git config --global user.name "Test Signer"
