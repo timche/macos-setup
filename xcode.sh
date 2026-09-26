@@ -83,10 +83,12 @@ EOF
 
   # xcodes is how a Mac with no Xcode gets one from the command line: `mas` wants
   # an App Store signed in at the screen, and Apple's own download page wants a
-  # browser. Upstream's tap rather than homebrew/core, because those bottles are
-  # the builds upstream signs and notarises itself.
+  # browser. homebrew/core rather than upstream's xcodesorg/made tap: the tap has
+  # no bottle for macOS 27 and builds from source there, and that build fails to
+  # link its x86_64 slice against the macOS 27 SDK (XcodesOrg/homebrew-made#4),
+  # while core pours a bottle for it.
   if ! printf '%s\n' "$installed" | grep -qxF xcodes; then
-    if ! brew install xcodesorg/made/xcodes; then
+    if ! brew install xcodes; then
       echo "could not install xcodes — rerun $repo/xcode.sh to try again" >&2
       exit 1
     fi
