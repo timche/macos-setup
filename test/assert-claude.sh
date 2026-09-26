@@ -54,12 +54,12 @@ check "the agent plist is valid" 'plutil -lint "$agent_plist"'
 
 # The whole of why it can be a link. launchd expands nothing itself, so the one
 # absolute path it needs is a shell's, and $HOME is what that shell expands — while
-# EnvironmentVariables and StandardOutPath, which took rendered paths before, are
-# gone: the wrapper works both out for itself.
+# EnvironmentVariables and StandardOutPath, which would each want a path spelled
+# out, are absent: the wrapper works both out for itself.
 check "the agent plist reaches the wrapper through \$HOME" \
   '[ "$(plutil -extract ProgramArguments.2 raw -o - "$agent_plist")" = \
      "exec \"\$HOME/.ssh/agent.sh\"" ]'
-check "the agent plist holds no rendered path" \
+check "the agent plist spells out no path of its own" \
   '! plutil -extract EnvironmentVariables raw -o - "$agent_plist" &&
    ! plutil -extract StandardOutPath raw -o - "$agent_plist"'
 

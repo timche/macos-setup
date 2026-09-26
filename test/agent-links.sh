@@ -6,9 +6,9 @@
 # agent comes up empty and stays up; the key itself is signing-agent.sh's, with a
 # stub 1Password and a HOME of its own.
 #
-# What it is here for is the two things a copy used to make true for free: that
-# launchd accepts a plist that is a symlink into the checkout, and that a wrapper
-# which changed in the checkout restarts the job rather than being ignored.
+# What it is here for is the two things the links have to make true: that launchd
+# accepts a plist that is a symlink into the checkout, and that a wrapper which
+# changed in the checkout restarts the job rather than being ignored.
 #
 # It refuses to run outside CI unless MACOS_SETUP_TEST_ANYWAY=1, for the same reason
 # signing-agent.sh does — launchd keys a job by label per account, so this bounces
@@ -67,13 +67,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# What a Mac provisioned before the links has: the wrapper copied into ~/.ssh, which
-# a pull no longer changes. It has to be gone by the end of the first run.
-mkdir -p "$HOME/.ssh"
-chmod 700 "$HOME/.ssh"
-rm -f "$agent"
-install -m 700 "$root/launchd/agent.sh" "$agent"
-
 job_pid() {
   launchctl print "gui/$uid/$label" 2>/dev/null | awk '$1 == "pid" { print $3 }'
 }
@@ -86,7 +79,6 @@ fi
 
 check "the wrapper in ~/.ssh is a link into the checkout" \
   '[ "$(readlink "$agent")" = "$root/launchd/agent.sh" ]'
-check "no copy of the wrapper is left in ~/.ssh" '[ -L "$agent" ]'
 check "the plist in ~/Library/LaunchAgents is a link into the checkout" \
   '[ "$(readlink "$plist")" = "$root/launchd/$label.plist" ]'
 check "the plist lints through the link" 'plutil -lint "$plist"'
@@ -97,8 +89,8 @@ check "launchd read the plist in the checkout" \
 check "the hash of the wrapper was recorded" \
   '[ "$(cat "$stamp")" = "$(shasum -a 256 "$root/launchd/agent.sh" | awk "{ print \$1 }")" ]'
 
-# The wrapper resolved $HOME for itself, which is the whole of what the plist no
-# longer renders: it found the socket, and it opened the log launchd used to.
+# The wrapper resolved $HOME for itself, which is the whole of what the plist
+# leaves to it: it found the socket, and it opened the log.
 waited=0
 while { [ ! -S "$socket" ] || [ ! -s "$log" ]; } && [ "$waited" -lt 20 ]; do
   sleep 0.5

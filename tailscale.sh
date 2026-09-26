@@ -12,9 +12,9 @@
 # signing agent wait for one. Tailscale call tailscaled on macOS the less-tested
 # variant and point unattended installs at it, which is what this is.
 #
-# A step of its own because it is the part of the machine that already existed
-# before this repo did: the Mac was on the tailnet to be reached at all, so the
-# first thing to do is look, and the best outcome is to change nothing.
+# A step of its own because it is the one part of the machine that is also the way
+# the machine is reached: once this Mac is on the tailnet, every later run of it
+# comes in over what it configures, so the best outcome is to change nothing.
 #
 # Not fatal. By the time this runs the rest of the machine is built, and a tailnet
 # can be sorted out afterwards.
@@ -86,21 +86,13 @@ fi
 
 # The daemon
 
-# Whichever way one got here: tailscale's own installer uses the first label, and
-# Homebrew has used both of the others for a root service. A daemon that is
-# already loaded is left alone, which is the point on this Mac — it was on the
-# tailnet before this script existed.
-daemon_label=""
+# The label `brew services` gives a root service, which is what starts tailscaled
+# below. Already loaded is left exactly as it is: a re-run has nothing to gain from
+# bouncing the daemon this machine is reached over.
+daemon_label=sh.brew.tailscale
 
-for label in com.tailscale.tailscaled sh.brew.tailscale homebrew.mxcl.tailscale; do
-  if sudo launchctl print "system/$label" >/dev/null 2>&1; then
-    daemon_label="$label"
-    break
-  fi
-done
-
-if [ -n "$daemon_label" ]; then
-  echo "tailscaled is already a system daemon ($daemon_label), left alone"
+if sudo launchctl print "system/$daemon_label" >/dev/null 2>&1; then
+  echo "tailscaled is already Homebrew's system daemon, left alone"
 else
   # --formula because the cask of nearly the same name is the standalone app.
   if ! command -v tailscaled >/dev/null 2>&1; then
@@ -123,18 +115,6 @@ else
   fi
 fi
 
-# The app, if somebody installed it too. Two tailscaled with one tunnel between
-# them is a machine that drops off the tailnet at random, and which of the two
-# won is not something either of them reports.
-if [ -d /Applications/Tailscale.app ]; then
-  echo
-  echo "warning: the standalone Tailscale app is installed as well, and the two" >&2
-  echo "fight over the same tunnel. Quit it from the menu bar, remove it with" >&2
-  echo "'sudo rm -rf /Applications/Tailscale.app', and take its network extension" >&2
-  echo "out in System Settings > General > Login Items & Extensions. Nothing here" >&2
-  echo "removes it: an app somebody installed is theirs to remove." >&2
-fi
-
 # What tailscaled says about itself. Two reads of the same JSON, both of which
 # have to survive a daemon that is not answering at all.
 tailscale_status() {
@@ -151,7 +131,7 @@ prefs="$(sudo tailscale debug prefs 2>/dev/null || true)"
 
 if [ -z "$prefs" ]; then
   echo "warning: tailscaled is not answering, so nothing was configured. 'sudo" >&2
-  echo "tailscale status' and 'sudo launchctl print system/${daemon_label:-sh.brew.tailscale}'" >&2
+  echo "tailscale status' and 'sudo launchctl print system/$daemon_label'" >&2
   echo "say why." >&2
   exit 0
 fi

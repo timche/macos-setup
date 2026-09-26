@@ -93,15 +93,6 @@ fi
 # LaunchAgent the Claude half installs is a link into it. MACOS_SETUP_DIR moves it.
 target="${MACOS_SETUP_DIR:-$HOME/.macos-setup}"
 
-# An earlier run cloned to ~/macos-setup. Moved rather than recloned, because two
-# clones is a Mac where a pull updates one of them and the agent runs the other.
-previous="$HOME/macos-setup"
-
-if [ -d "$previous/.git" ] && [ ! -e "$target" ]; then
-  echo "Moving the clone from $previous to $target."
-  mv "$previous" "$target"
-fi
-
 if [ -d "$target/.git" ]; then
   git -C "$target" pull --ff-only
 else

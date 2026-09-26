@@ -68,12 +68,6 @@ mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
 mkdir -p "$HOME/Library/LaunchAgents"
 
-# A run before the links copied the wrapper here, and a copy left behind is a Mac
-# where the pull that changed the wrapper changed nothing.
-if [ -f "$agent" ] && [ ! -L "$agent" ]; then
-  echo "replacing the copy of agent.sh in ~/.ssh with a link into $root"
-fi
-
 plist_relinked=false
 if [ "$(readlink "$plist" || true)" != "$source_plist" ]; then
   rm -f "$plist"

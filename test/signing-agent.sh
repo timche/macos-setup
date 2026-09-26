@@ -6,8 +6,8 @@
 # that matters — that a commit signs with a key no file on the machine holds.
 #
 # Everything runs against a throwaway HOME. launchd hands a gui-domain agent the
-# account's home directory rather than this one, which the plist now leaves it to
-# resolve — so ssh-agent.sh installs its links here and deliberately loads nothing,
+# account's home directory rather than this one, and the plist leaves every path to
+# it — so ssh-agent.sh installs its links here and deliberately loads nothing,
 # and the wrapper is run the same way launchd runs it, with a HOME of its own.
 # test/agent-links.sh is the other half of this, and covers what launchd does with
 # those links for the account it really belongs to.
@@ -179,7 +179,7 @@ done
 export fingerprint="$(ssh-keygen -lf "$work/key.pub" | awk '{print $2}')"
 
 check "the agent is listening on the socket the dotfiles name" '[ -S "$socket" ]'
-check "the wrapper opened its own log, which the plist no longer names" \
+check "the wrapper opened its own log, which the plist does not name" \
   '[ -s "$agent_log" ]'
 check "the agent holds the key from 1Password" \
   'SSH_AUTH_SOCK="$socket" ssh-add -l | grep -qF "$fingerprint"'

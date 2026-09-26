@@ -40,10 +40,10 @@ check "no hardcoded home directory in the scripts" \
      grep -q .'
 
 # The clone is ~/.macos-setup, hidden because it is machinery rather than work, and
-# the LaunchAgent the Claude half installs is a link into it — so a clone at the old
-# path is a Mac where a pull moves one checkout and launchd runs the other.
-# bootstrap.sh is the only thing that decides where it goes, and a runner's clone is
-# the workspace, so the default is what there is to assert here.
+# the LaunchAgent the Claude half installs is a link into it — so where it lands is
+# also where launchd reads the agent from. bootstrap.sh is the only thing that
+# decides that, and a runner's clone is the workspace, so the default is what there
+# is to assert here.
 check "the clone defaults to the hidden path" \
   'grep -q "MACOS_SETUP_DIR:-\$HOME/\.macos-setup" "$root/bootstrap.sh"'
 
@@ -66,9 +66,7 @@ check "the tailscale CLI answers" 'tailscale version'
 # provisioned by hand should not meet a password prompt inside a test.
 if sudo -n true 2>/dev/null; then
   check "tailscaled is a loaded system daemon" \
-    'sudo -n launchctl print system/com.tailscale.tailscaled ||
-     sudo -n launchctl print system/sh.brew.tailscale ||
-     sudo -n launchctl print system/homebrew.mxcl.tailscale'
+    'sudo -n launchctl print system/sh.brew.tailscale'
 else
   echo "  --    sudo wants a password, so tailscaled's daemon was not checked"
 fi

@@ -10,9 +10,9 @@
 # clone is how a change is picked up.
 #
 # Safe to re-run. Everything here checks the machine before touching it, which is
-# the point on a Mac rather than a VM: this one was reachable over SSH and on the
-# tailnet before the repo existed, and a second tailscale or a rewritten sshd
-# would be a step backwards.
+# the point on a Mac rather than a VM: this one is reached over the SSH and the
+# tailnet it configures, so a rewritten sshd or a bounced tailscaled would cut the
+# run off from the machine it is running on.
 
 set -euo pipefail
 

@@ -9,13 +9,11 @@
 # Neither of them is fatal. By the time this runs the machine is built; what is
 # missing is an account on it, and that can be sorted out later.
 #
-# Safe to re-run: a login already in place is left alone, unless it is in the
-# login keychain, which is the one thing here worth replacing.
+# Safe to re-run: a login already in place is left alone.
 
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-hosts="${GH_CONFIG_DIR:-$HOME/.config/gh}/hosts.yml"
 
 if [ ! -t 0 ]; then
   echo "login.sh needs a terminal for the browser flows — run it directly." >&2
@@ -36,23 +34,9 @@ fi
 # sees. --insecure-storage writes it to hosts.yml instead: a file the account owns
 # on a Mac whose disk is not encrypted anyway, and the only form the LaunchAgents
 # that sign and push can read.
-token_in_file() {
-  [ -f "$hosts" ] && grep -q '^ *oauth_token:' "$hosts"
-}
-
-if [ "$gh_was_authenticated" = true ] && token_in_file; then
+if [ "$gh_was_authenticated" = true ]; then
   echo "gh is already authenticated"
 else
-  if [ "$gh_was_authenticated" = true ]; then
-    echo
-    echo "gh is logged in, but the token is in the login keychain, which an SSH"
-    echo "session and a LaunchAgent cannot count on reaching. Logging in again to"
-    echo "put it in a file."
-    echo
-
-    gh auth logout --hostname github.com || true
-  fi
-
   cat <<'EOF'
 
 Logging in to GitHub. There is no browser on this Mac, so gh prints a code and a
