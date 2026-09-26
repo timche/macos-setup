@@ -160,7 +160,9 @@ The GitHub token goes in a file rather than the login keychain (`gh auth login -
 
 ## The signing key
 
-The key is the same one every machine here signs with, and it lives in 1Password. Only its public half is ever written to this Mac — `~/.ssh/claude.pub`, which `mac-mini-dotfiles`' `.gitconfig` points `user.signingkey` at, plus a line in `~/.ssh/allowed_signers` so git can verify what it signs. The private half is read out of 1Password straight into an ssh-agent, over a pipe, every time that agent starts. There is no file to leak and nothing to paste.
+The key is the same one every machine here signs with, and it lives in 1Password. Neither half is written to this Mac. The private half is read out of 1Password straight into an ssh-agent, over a pipe, every time that agent starts; the public half is read only to trust it and to register it, and `mac-mini-dotfiles`' `.gitconfig` names no key at all — it sets `gpg.ssh.defaultKeyCommand` to `ssh-add -L`, which is git's own way of asking the agent, and with no `user.signingkey` git signs with the first key it answers with. There is no file to leak and nothing to paste.
+
+The one file derived from the key is `~/.ssh/allowed_signers`, a principal and a public key so that git can verify what it signs. It is not a second source: `claude/signing-key.sh` rewrites it from 1Password on every run, so a rotated key takes the line for the old one with it.
 
 What it expects:
 
@@ -180,7 +182,7 @@ tail -f ~/Library/Logs/ssh-agent.log                      # why it is nothing ye
 git commit --allow-empty -m test && git log --format='%G?' -1
 ```
 
-An `invalid format` from git rather than a `G` usually means exactly one thing: the agent does not hold the key, and `ssh-keygen -Y sign` has fallen back to reading the public key as a private one.
+`error: user.signingKey needs to be set for ssh signing` from that commit means exactly one thing: `ssh-add -L` answered with nothing, so the agent is not up or is not holding the key yet. It is the honest failure — before the key came from the agent alone, an empty agent produced an `invalid format` instead, git having tried to read the public-key file as a private one.
 
 ## Two things worth knowing
 

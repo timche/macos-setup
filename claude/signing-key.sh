@@ -2,32 +2,32 @@
 
 # Install the commit-signing key. Claude-side rather than part of the machine,
 # because it is not how the Mac is reached but how it signs as the person whose
-# accounts it works from: mac-mini-dotfiles' .gitconfig points git at
-# ~/.ssh/claude.pub, and register-signing-key.sh puts the public half on the GitHub
-# account that has to accept the signature.
+# accounts it works from: mac-mini-dotfiles' .gitconfig names no key at all and
+# asks the agent for one, and register-signing-key.sh puts the same key on the
+# GitHub account that has to accept the signature.
 #
 # The key is the same one the VM uses and it comes out of 1Password rather than
 # being pasted: a paste is a private key on somebody's clipboard, and this is the
-# one machine where the private half never has to touch the disk at all. Only the
-# public half is written here. The private half is read by the agent
-# ssh-agent.sh installs, straight into memory, every time it starts.
+# one machine where neither half touches the disk. The private half is read by the
+# agent ssh-agent.sh installs, straight into memory, every time it starts; the
+# public half is read here only to trust it and to register it, and 1Password stays
+# the one place it is kept.
 #
 # What it needs is a 1Password service account with read access to the vault, whose
 # token is stored once and read by both. Nothing prints it.
 #
-# The allowed_signers git verifies against is written here rather than tracked in
-# the repo. The same key on every machine would make a tracked copy correct, but
-# writing it locally costs nothing and keeps a credential-shaped file out of public
-# history.
+# The allowed_signers git verifies against is the one derived file left, written
+# here rather than tracked in the repo. The same key on every machine would make a
+# tracked copy correct, but writing it locally costs nothing and keeps a
+# credential-shaped file out of public history.
 #
-# Safe to re-run: a stored token is reused, and the key is compared before it is
-# rewritten.
+# Safe to re-run: a stored token is reused, and the trust list is compared before
+# it is rewritten.
 
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-signing_key="$HOME/.ssh/claude.pub"
 allowed_signers="$HOME/.ssh/allowed_signers"
 
 # The item, not the fields: both halves of one key are two fields of one 1Password
@@ -146,51 +146,40 @@ signer_identity() {
   git config --get user.email || echo "$(id -un)@$(hostname -s)"
 }
 
-# Drops the line for a key that is about to be replaced, so the trust list does not
-# collect keys this machine no longer holds.
-forget_signer() {
-  local key="$1"
-
-  [ -f "$allowed_signers" ] || return 0
-
-  local kept
-  kept="$(mktemp)"
-  grep -vF "$key" "$allowed_signers" >"$kept" || true
-  mv "$kept" "$allowed_signers"
-  chmod 644 "$allowed_signers"
-}
-
+# Rewritten whole rather than appended to. With no copy of the key left on disk
+# there is nothing to compare a rotated one against, so every line for this
+# principal goes and the key 1Password serves now is the only one that comes back —
+# otherwise the list collects keys this machine no longer holds, and each of them
+# stays trusted.
 trust_signer() {
-  local line
-  line="$(signer_identity) $(awk '{print $1" "$2}' "$signing_key")"
+  local principal line kept
+  principal="$(signer_identity)"
+  line="$principal $(awk '{print $1" "$2}' "$staged")"
 
-  if [ -f "$allowed_signers" ] && grep -qxF "$line" "$allowed_signers"; then
+  kept="$(mktemp)"
+  if [ -f "$allowed_signers" ]; then
+    awk -v p="$principal" '$1 != p' "$allowed_signers" >"$kept"
+  fi
+  printf '%s\n' "$line" >>"$kept"
+
+  if [ -f "$allowed_signers" ] && cmp -s "$kept" "$allowed_signers"; then
+    rm -f "$kept"
+    echo "$allowed_signers already trusts the key in $item"
     return 0
   fi
 
-  printf '%s\n' "$line" >>"$allowed_signers"
-  chmod 644 "$allowed_signers"
+  install -m 644 "$kept" "$allowed_signers"
+  rm -f "$kept"
 
   echo "trusted the signing key in $allowed_signers"
 }
-
-if cmp -s "$staged" "$signing_key"; then
-  echo "$signing_key is already the key in $item"
-else
-  if [ -f "$signing_key" ]; then
-    forget_signer "$(awk '{print $1" "$2}' "$signing_key")"
-  fi
-
-  install -m 644 "$staged" "$signing_key"
-  echo "installed $signing_key from $item"
-fi
 
 trust_signer
 
 # The private half, into an agent and nowhere else.
 "$repo/ssh-agent.sh"
 
-"$repo/register-signing-key.sh" "$signing_key"
+"$repo/register-signing-key.sh"
 
 cat <<EOF
 

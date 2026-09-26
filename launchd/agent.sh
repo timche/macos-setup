@@ -2,9 +2,9 @@
 
 # The ssh-agent that holds the commit-signing key, and the only place the private
 # half of that key ever exists on this Mac: it comes out of 1Password down a pipe
-# into ssh-add and is never written anywhere. mac-mini-dotfiles' .gitconfig points
-# user.signingkey at ~/.ssh/claude.pub, and git signs with whatever agent holds the
-# match — so this process is what makes a commit signable, and losing it costs
+# into ssh-add and is never written anywhere. mac-mini-dotfiles' .gitconfig names no
+# key of its own and asks this agent for one through gpg.ssh.defaultKeyCommand — so
+# this process is the whole of what makes a commit signable, and losing it costs
 # nothing but a re-read.
 #
 # Run by launchd out of the checkout — ~/.ssh/agent.sh is a symlink to this file,

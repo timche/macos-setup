@@ -111,13 +111,13 @@ install -d -m 700 "$home/.config/op"
 printf 'ops_stub_token' >"$home/.config/op/service-account-token"
 chmod 600 "$home/.config/op/service-account-token"
 
-# What mac-mini-dotfiles' .gitconfig carries on the real machine: the signing key is
-# named by its public half alone, and the principal in allowed_signers has to be
-# the address the commits are authored under.
+# What mac-mini-dotfiles' .gitconfig carries on the real machine: no key named at
+# all, git asking the agent for one instead, and a principal in allowed_signers that
+# has to be the address the commits are authored under.
 HOME="$home" git config --global user.name "Test Signer"
 HOME="$home" git config --global user.email signer@example.com
 HOME="$home" git config --global gpg.format ssh
-HOME="$home" git config --global user.signingkey "$home/.ssh/claude.pub"
+HOME="$home" git config --global gpg.ssh.defaultKeyCommand "ssh-add -L"
 HOME="$home" git config --global gpg.ssh.allowedSignersFile "$home/.ssh/allowed_signers"
 HOME="$home" git config --global commit.gpgsign true
 
@@ -132,8 +132,6 @@ export root home socket agent_log work label uid
 # GitHub and the trust list both keep the type and the body and drop the comment.
 export signer_line="signer@example.com $(awk '{print $1" "$2}' "$work/key.pub")"
 
-check "the public half came out of 1Password" \
-  'cmp -s "$work/key.pub" "$home/.ssh/claude.pub"'
 check "the key is trusted under the authoring address" \
   'grep -qxF "$signer_line" "$home/.ssh/allowed_signers"'
 
@@ -142,8 +140,14 @@ check "the key is trusted under the authoring address" \
 # content and not a particular path.
 check "no private key was written anywhere in .ssh" \
   '! grep -rlq "PRIVATE KEY" "$home/.ssh"'
-check "no private key was written beside the public half" \
-  '[ ! -e "$home/.ssh/claude" ]'
+
+# Nor the public half. 1Password is the one place the key is kept, git asks the
+# agent for it, and the trust list is the only thing derived from it — so a copy on
+# disk would be a second source to rotate and to get wrong.
+check "no public key file was written under .ssh either" \
+  '[ -z "$(find "$home/.ssh" -name "*.pub" -print -quit)" ]'
+check "nothing under .ssh is named after the account" \
+  '[ ! -e "$home/.ssh/claude" ] && [ ! -e "$home/.ssh/claude.pub" ]'
 
 export plist="$home/Library/LaunchAgents/$label.plist"
 
@@ -184,12 +188,19 @@ check "the wrapper opened its own log, which the plist does not name" \
 check "the agent holds the key from 1Password" \
   'SSH_AUTH_SOCK="$socket" ssh-add -l | grep -qF "$fingerprint"'
 
-# The assertion the rest is for: git signs with a public key and an agent, and
-# verifies against the trust list signing-key.sh wrote.
+# The assertion the rest is for: git asks the agent which key to sign with, having
+# no file to be told by, and verifies against the trust list signing-key.sh wrote.
 check "a commit signs through the agent and verifies" \
   'mkdir -p "$work/repo" && cd "$work/repo" && HOME="$home" git init -q . &&
    HOME="$home" SSH_AUTH_SOCK="$socket" git commit --allow-empty -q -m signed &&
    [ "$(HOME="$home" SSH_AUTH_SOCK="$socket" git log --format=%G? -1)" = G ]'
+
+# The other side of the same claim: with the agent out of reach there is nothing
+# left to sign with, which is what proves the signature came from it and not from a
+# file this suite failed to notice.
+check "a commit cannot sign with the agent out of reach" \
+  'cd "$work/repo" &&
+   ! HOME="$home" SSH_AUTH_SOCK= git commit --allow-empty -q -m unsigned'
 
 # Documented as safe to re-run, so prove it: nothing may be rewritten, and the
 # agent has to come out of it holding the same key.
