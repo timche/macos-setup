@@ -146,9 +146,7 @@ xcodebuild -version
 
 cat <<EOF
 
-Signing needs one more thing this script has no business fetching: the Developer
-ID certificate and its private key in the login keychain. Export it from a Mac
-that has it and import the .p12 with:
-
-  security import <certificate>.p12 -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign
+Nothing else to do for signing: the Developer ID certificate comes out of
+1Password at build time, into a keychain electron-builder makes and throws away,
+so it is never imported into the login keychain here.
 EOF

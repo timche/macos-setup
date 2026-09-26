@@ -150,7 +150,7 @@ xcodebuild -version
 xcodes installed       # every Xcode on the Mac, and which one is selected
 ```
 
-Signing needs one thing `xcode.sh` has no business fetching: the Developer ID certificate and its private key in the login keychain, imported from wherever it is kept with `security import <certificate>.p12 -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign`.
+Nothing here installs the Developer ID certificate, and nothing should: electron-builder takes it from `CSC_LINK` and `CSC_KEY_PASSWORD` and imports it into a keychain of its own for the length of a build. It comes out of 1Password at that point, through a wrapper in `mac-mini-dotfiles`, so the login keychain never holds it and a Mac reprovisioned from here has nothing to re-import.
 
 ## The Claude Code overlay
 
