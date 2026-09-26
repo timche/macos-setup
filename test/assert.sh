@@ -63,11 +63,13 @@ check "bootstrap-system.sh installs the Brewfile and moves no version" \
 # xcodes and aria2 are xcode.sh's, because that step only runs where there is a
 # terminal — so nothing else may install a package and the Brewfile may not declare
 # those two. Both halves, or the decision holds in one direction only.
+# A word boundary in front, or "Homebrew installs them in its own prefix" in
+# docker.sh's prose reads as a package install.
 check "every package is the Brewfile's, bar the Xcode download's two" \
   '! grep -qE "^(brew|cask) \"(xcodes|aria2)\"" "$root/Brewfile" &&
    for script in "$root"/*.sh; do
      case "${script##*/}" in xcode.sh) continue ;; esac
-     ! grep -q "brew install" "$script" || exit 1
+     ! grep -qE "(^|[^A-Za-z])brew install " "$script" || exit 1
    done'
 check "gh installed"   'command -v gh'
 check "jq installed"   'command -v jq'
